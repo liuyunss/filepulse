@@ -1,0 +1,1155 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>文件脉搏 FilePulse — 跨平台文件分析筛选工具</title>
+<style>
+/* ==================== CSS Variables / Theming ==================== */
+:root {
+  --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --transition: 0.25s ease;
+}
+[data-theme="dark"] {
+  --bg-primary: #0f1117;
+  --bg-secondary: #1a1d28;
+  --bg-tertiary: #242836;
+  --bg-hover: #2d3245;
+  --bg-active: #363b50;
+  --border-color: #2d3245;
+  --text-primary: #e8eaf0;
+  --text-secondary: #9ba1b5;
+  --text-muted: #5f6578;
+  --accent: #6c9cff;
+  --accent-hover: #8db4ff;
+  --accent-subtle: rgba(108,155,255,0.12);
+  --success: #5ddb7e;
+  --warning: #ffc157;
+  --danger: #ff6b6b;
+  --shadow: 0 4px 24px rgba(0,0,0,0.4);
+  --scrollbar-track: #1a1d28;
+  --scrollbar-thumb: #363b50;
+}
+[data-theme="light"] {
+  --bg-primary: #f5f7fb;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #eef1f7;
+  --bg-hover: #e4e8f0;
+  --bg-active: #d8dce8;
+  --border-color: #dce1ec;
+  --text-primary: #1a1d28;
+  --text-secondary: #5f6578;
+  --text-muted: #9ba1b5;
+  --accent: #3b70f7;
+  --accent-hover: #2b5ce0;
+  --accent-subtle: rgba(59,112,247,0.08);
+  --success: #2e9e5c;
+  --warning: #d4940a;
+  --danger: #e03e3e;
+  --shadow: 0 4px 24px rgba(0,0,0,0.08);
+  --scrollbar-track: #eef1f7;
+  --scrollbar-thumb: #c8cdd8;
+}
+
+/* ==================== Reset & Base ==================== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.5;
+  transition: background var(--transition), color var(--transition);
+}
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* ==================== Layout ==================== */
+.app-container {
+  display: grid;
+  grid-template-rows: 48px 1fr 32px;
+  grid-template-columns: 280px 1fr 260px;
+  height: 100vh;
+}
+
+/* ==================== Top Bar ==================== */
+.topbar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  z-index: 100;
+}
+.topbar-left { display: flex; align-items: center; gap: 12px; }
+.topbar-logo {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 15px; font-weight: 700; letter-spacing: -0.3px;
+}
+.logo-icon {
+  width: 28px; height: 28px; border-radius: 8px;
+  background: linear-gradient(135deg, var(--accent), #a78bfa);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 14px; font-weight: 800;
+}
+.topbar-center { display: flex; align-items: center; gap: 4px; }
+.topbar-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border: none; border-radius: 6px;
+  background: transparent; color: var(--text-secondary);
+  font-size: 12.5px; font-weight: 500; cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+.topbar-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+.topbar-btn:active { transform: scale(0.97); }
+.topbar-btn.active { background: var(--accent-subtle); color: var(--accent); }
+.topbar-btn .icon { font-size: 14px; }
+.topbar-btn.danger:hover { background: rgba(255,107,107,0.12); color: var(--danger); }
+.topbar-right { display: flex; align-items: center; gap: 8px; }
+.search-box {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 12px; border-radius: 6px;
+  background: var(--bg-tertiary); border: 1px solid var(--border-color);
+  color: var(--text-primary); font-size: 12.5px;
+  transition: border-color var(--transition);
+}
+.search-box:focus-within { border-color: var(--accent); }
+.search-box input {
+  border: none; outline: none; background: transparent;
+  color: inherit; font-size: 12.5px; width: 160px;
+}
+.search-box .icon { color: var(--text-muted); font-size: 13px; }
+
+/* ==================== Left Panel (Folder) ==================== */
+.left-panel {
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-color);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.panel-header {
+  padding: 12px 14px; font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.8px;
+  color: var(--text-muted); border-bottom: 1px solid var(--border-color);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.panel-header .badge {
+  background: var(--accent-subtle); color: var(--accent);
+  padding: 1px 8px; border-radius: 10px; font-size: 10px;
+}
+.folder-dropzone {
+  margin: 12px; padding: 28px 16px;
+  border: 2px dashed var(--border-color);
+  border-radius: 10px; text-align: center;
+  cursor: pointer; transition: all var(--transition);
+  flex-shrink: 0;
+}
+.folder-dropzone:hover, .folder-dropzone.dragover {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+}
+.folder-dropzone .icon { font-size: 32px; margin-bottom: 8px; display: block; }
+.folder-dropzone p { color: var(--text-secondary); font-size: 12px; }
+.folder-dropzone .hint { color: var(--text-muted); font-size: 11px; margin-top: 4px; }
+.folder-list { flex: 1; overflow-y: auto; padding: 4px 8px; }
+.folder-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; border-radius: 6px;
+  cursor: pointer; transition: all var(--transition);
+  margin-bottom: 2px;
+}
+.folder-item:hover { background: var(--bg-hover); }
+.folder-item.active { background: var(--accent-subtle); }
+.folder-item .fi-icon { font-size: 16px; }
+.folder-item .fi-info { flex: 1; min-width: 0; }
+.folder-item .fi-name {
+  font-size: 12px; font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.folder-item .fi-meta { font-size: 10px; color: var(--text-muted); }
+.folder-item .fi-remove {
+  width: 18px; height: 18px; border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+  background: transparent; color: var(--text-muted); cursor: pointer;
+  font-size: 11px; transition: all var(--transition);
+  border: none;
+}
+.folder-item .fi-remove:hover { background: var(--danger); color: #fff; }
+
+/* ==================== Center Panel (File List) ==================== */
+.center-panel {
+  display: flex; flex-direction: column;
+  background: var(--bg-primary); overflow: hidden;
+}
+.file-table-wrap { flex: 1; overflow: auto; }
+.file-table {
+  width: 100%; border-collapse: collapse;
+  table-layout: fixed;
+}
+.file-table col.c0 { width: 40px; }
+.file-table col.c1 { width: 36%; }
+.file-table col.c2 { width: 100px; }
+.file-table col.c3 { width: 80px; }
+.file-table col.c4 { width: 120px; }
+.file-table col.c5 { width: 160px; }
+.file-table thead { position: sticky; top: 0; z-index: 10; }
+.file-table thead th {
+  padding: 8px 12px; font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--text-muted); text-align: left;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer; user-select: none;
+  transition: color var(--transition);
+  white-space: nowrap;
+}
+.file-table thead th:hover { color: var(--text-secondary); }
+.file-table thead th .sort-arrow { margin-left: 4px; font-size: 9px; }
+.file-table tbody tr {
+  border-bottom: 1px solid var(--border-color);
+  transition: background var(--transition);
+  cursor: pointer;
+}
+.file-table tbody tr:hover { background: var(--bg-hover); }
+.file-table tbody tr.selected { background: var(--accent-subtle); }
+.file-table tbody tr.selected:hover { background: rgba(108,155,255,0.18); }
+.file-table td {
+  padding: 7px 12px; font-size: 12px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--text-primary);
+}
+.file-table td.t-check { text-align: center; }
+.file-table td.t-check input[type="checkbox"] {
+  width: 14px; height: 14px; accent-color: var(--accent);
+  cursor: pointer;
+}
+.file-table td.t-icon { font-size: 15px; text-align: center; }
+.file-table td.t-size {
+  font-family: var(--font-mono); font-size: 11.5px;
+  color: var(--text-secondary);
+}
+.file-table td.t-type {
+  font-size: 11px; padding: 2px 8px; border-radius: 4px;
+  font-weight: 500; display: inline-block;
+}
+.file-table td.t-date { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-secondary); }
+.file-table td.t-path {
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-muted);
+}
+.file-table td.t-actions { text-align: right; }
+.file-table td.t-actions button {
+  width: 24px; height: 24px; border-radius: 5px; border: none;
+  background: transparent; color: var(--text-muted); cursor: pointer;
+  font-size: 12px; transition: all var(--transition);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.file-table td.t-actions button:hover { background: var(--bg-active); color: var(--text-primary); }
+
+/* ==================== Right Panel (Filters) ==================== */
+.right-panel {
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border-color);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.filter-section {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-color);
+}
+.filter-section h4 {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.5px; color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.filter-group { margin-bottom: 8px; }
+.filter-group:last-child { margin-bottom: 0; }
+.filter-label {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 12px; color: var(--text-secondary); margin-bottom: 5px;
+}
+.filter-input-row { display: flex; gap: 6px; align-items: center; }
+.filter-input {
+  flex: 1; padding: 5px 8px; border-radius: 5px;
+  background: var(--bg-tertiary); border: 1px solid var(--border-color);
+  color: var(--text-primary); font-size: 12px;
+  transition: border-color var(--transition);
+}
+.filter-input:focus { outline: none; border-color: var(--accent); }
+.filter-select {
+  padding: 5px 8px; border-radius: 5px;
+  background: var(--bg-tertiary); border: 1px solid var(--border-color);
+  color: var(--text-primary); font-size: 12px;
+  cursor: pointer;
+}
+.filter-select:focus { outline: none; border-color: var(--accent); }
+.filter-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.filter-chip {
+  padding: 3px 10px; border-radius: 12px;
+  font-size: 11px; font-weight: 500;
+  cursor: pointer; transition: all var(--transition);
+  border: 1px solid var(--border-color);
+  background: var(--bg-tertiary); color: var(--text-secondary);
+}
+.filter-chip:hover { border-color: var(--accent); color: var(--accent); }
+.filter-chip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.filter-slider { position: relative; width: 100%; }
+.filter-slider input[type="range"] {
+  width: 100%; accent-color: var(--accent);
+}
+.filter-value {
+  font-family: var(--font-mono); font-size: 11px;
+  text-align: right; color: var(--accent); margin-top: 2px;
+}
+.filter-toggle {
+  display: flex; align-items: center; gap: 8px;
+  cursor: pointer; user-select: none;
+}
+.filter-toggle input { accent-color: var(--accent); cursor: pointer; }
+.filter-toggle label { font-size: 12px; color: var(--text-secondary); cursor: pointer; }
+.filter-apply-btn {
+  width: 100%; padding: 8px; border-radius: 6px;
+  background: var(--accent); color: #fff; font-size: 12px;
+  font-weight: 600; border: none; cursor: pointer;
+  transition: all var(--transition);
+  margin-top: 8px;
+}
+.filter-apply-btn:hover { background: var(--accent-hover); }
+.filter-reset-btn {
+  width: 100%; padding: 6px; border-radius: 6px;
+  background: transparent; color: var(--text-muted); font-size: 11px;
+  border: 1px solid var(--border-color); cursor: pointer;
+  transition: all var(--transition);
+  margin-top: 4px;
+}
+.filter-reset-btn:hover { border-color: var(--text-muted); color: var(--text-secondary); }
+
+/* ==================== Status Bar ==================== */
+.statusbar {
+  grid-column: 1 / -1;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 16px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-color);
+  font-size: 11px; color: var(--text-muted);
+}
+.statusbar-left { display: flex; align-items: center; gap: 16px; }
+.status-item { display: flex; align-items: center; gap: 4px; }
+.status-dot { width: 6px; height: 6px; border-radius: 50%; }
+.status-dot.green { background: var(--success); }
+.status-dot.yellow { background: var(--warning); }
+.status-item strong { color: var(--text-secondary); font-weight: 600; }
+
+/* ==================== Modal / Dialog ==================== */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,0.5);
+  display: none; align-items: center; justify-content: center;
+  backdrop-filter: blur(4px);
+}
+.modal-overlay.show { display: flex; }
+.modal {
+  background: var(--bg-secondary); border-radius: 12px;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow);
+  min-width: 420px; max-width: 500px;
+  overflow: hidden;
+}
+.modal-header {
+  padding: 16px 20px; display: flex; align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-color);
+}
+.modal-header h3 { font-size: 14px; font-weight: 600; }
+.modal-close {
+  width: 28px; height: 28px; border-radius: 6px;
+  border: none; background: transparent; color: var(--text-muted);
+  cursor: pointer; font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+  transition: all var(--transition);
+}
+.modal-close:hover { background: var(--bg-hover); color: var(--text-primary); }
+.modal-body { padding: 20px; }
+.modal-footer {
+  padding: 12px 20px; display: flex; justify-content: flex-end; gap: 8px;
+  border-top: 1px solid var(--border-color);
+}
+.btn {
+  padding: 7px 16px; border-radius: 6px; font-size: 12px;
+  font-weight: 500; border: none; cursor: pointer;
+  transition: all var(--transition);
+}
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-ghost { background: var(--bg-tertiary); color: var(--text-secondary); }
+.btn-ghost:hover { background: var(--bg-hover); }
+
+/* ==================== Toast ==================== */
+.toast-container {
+  position: fixed; bottom: 44px; right: 16px; z-index: 2000;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.toast {
+  padding: 10px 16px; border-radius: 8px;
+  background: var(--bg-secondary); border: 1px solid var(--border-color);
+  box-shadow: var(--shadow);
+  font-size: 12px; color: var(--text-primary);
+  display: flex; align-items: center; gap: 8px;
+  animation: toastIn 0.3s ease;
+  max-width: 320px;
+}
+.toast.out { animation: toastOut 0.3s ease forwards; }
+@keyframes toastIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes toastOut { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(10px); } }
+.toast-icon { font-size: 15px; }
+.toast.success .toast-icon { color: var(--success); }
+.toast.info .toast-icon { color: var(--accent); }
+.toast.warning .toast-icon { color: var(--warning); }
+
+/* ==================== Empty / State Helpers ==================== */
+.empty-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  height: 100%; color: var(--text-muted); text-align: center; padding: 40px;
+}
+.empty-state .icon { font-size: 48px; margin-bottom: 12px; opacity: 0.5; }
+.empty-state p { font-size: 13px; margin-bottom: 4px; }
+.empty-state .sub { font-size: 11px; }
+
+/* ==================== Animations ==================== */
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+.skeleton { animation: pulse 1.5s infinite; background: var(--bg-tertiary); border-radius: 4px; }
+
+/* ==================== Responsive ==================== */
+@media (max-width: 1024px) {
+  .app-container { grid-template-columns: 220px 1fr 220px; }
+}
+@media (max-width: 768px) {
+  .app-container {
+    grid-template-columns: 1fr;
+    grid-template-rows: 48px 1fr 32px;
+  }
+  .left-panel, .right-panel { display: none; }
+  .topbar-center { display: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- ==================== App Container ==================== -->
+<div class="app-container">
+
+  <!-- ===== Top Bar ===== -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="topbar-logo">
+        <div class="logo-icon">F</div>
+        <span>FilePulse</span>
+      </div>
+    </div>
+    <div class="topbar-center">
+      <button class="topbar-btn active" onclick="showToast('info','已加载扫描引擎 v3.2')">
+        <span class="icon">📂</span> 扫描文件夹
+      </button>
+      <button class="topbar-btn" onclick="showToast('info','正在检测重复文件...')">
+        <span class="icon">🔍</span> 重复检测
+      </button>
+      <button class="topbar-btn" onclick="showToast('info','正在查找空文件夹...')">
+        <span class="icon">📁</span> 空文件夹
+      </button>
+      <button class="topbar-btn" onclick="showToast('info','正在解散文件夹...')">
+        <span class="icon">↩️</span> 解散文件夹
+      </button>
+      <button class="topbar-btn" onclick="openExportModal()">
+        <span class="icon">📊</span> 导出报告
+      </button>
+    </div>
+    <div class="topbar-right">
+      <div class="search-box">
+        <span class="icon">🔎</span>
+        <input type="text" placeholder="搜索文件名..." id="globalSearch" oninput="handleSearch(this.value)">
+      </div>
+      <button class="topbar-btn" id="themeToggle" onclick="toggleTheme()">
+        <span class="icon">🌙</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ===== Left Panel: Folder Selection ===== -->
+  <aside class="left-panel">
+    <div class="panel-header">
+      <span>📂 文件夹</span>
+      <span class="badge" id="folderCount">3 个文件夹</span>
+    </div>
+    <div class="folder-dropzone" id="dropzone"
+         ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)"
+         ondrop="handleDrop(event)" onclick="simulateFolderSelect()">
+      <span class="icon">📥</span>
+      <p>拖入文件夹到这里</p>
+      <p class="hint">或点击此处选择</p>
+    </div>
+    <div class="folder-list" id="folderList">
+      <div class="folder-item active" onclick="selectFolder(this, 0)">
+        <span class="fi-icon">📁</span>
+        <div class="fi-info">
+          <div class="fi-name">D:\Projects\WebApp</div>
+          <div class="fi-meta">42 文件 · 128 MB</div>
+        </div>
+        <button class="fi-remove" onclick="event.stopPropagation(); removeFolder(this)" title="移除">✕</button>
+      </div>
+      <div class="folder-item" onclick="selectFolder(this, 1)">
+        <span class="fi-icon">📁</span>
+        <div class="fi-info">
+          <div class="fi-name">/Users/Files/Documents</div>
+          <div class="fi-meta">31 文件 · 85 MB</div>
+        </div>
+        <button class="fi-remove" onclick="event.stopPropagation(); removeFolder(this)" title="移除">✕</button>
+      </div>
+      <div class="folder-item" onclick="selectFolder(this, 2)">
+        <span class="fi-icon">📁</span>
+        <div class="fi-info">
+          <div class="fi-name">/home/downloads</div>
+          <div class="fi-meta">56 文件 · 320 MB</div>
+        </div>
+        <button class="fi-remove" onclick="event.stopPropagation(); removeFolder(this)" title="移除">✕</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ===== Center Panel: File List ===== -->
+  <main class="center-panel">
+    <div class="file-table-wrap">
+      <table class="file-table" id="fileTable">
+        <colgroup>
+          <col class="c0"><col class="c1"><col class="c2"><col class="c3"><col class="c4"><col class="c5"><col class="c0">
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="t-check"><input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)"></th>
+            <th data-sort="name" onclick="handleSort('name')">文件名 <span class="sort-arrow" id="sort-name"></span></th>
+            <th data-sort="size" onclick="handleSort('size')">大小 <span class="sort-arrow" id="sort-size"></span></th>
+            <th data-sort="type" onclick="handleSort('type')">类型 <span class="sort-arrow" id="sort-type"></span></th>
+            <th data-sort="date" onclick="handleSort('date')">修改时间 <span class="sort-arrow" id="sort-date"></span></th>
+            <th data-sort="path" onclick="handleSort('path')">路径 <span class="sort-arrow" id="sort-path"></span></th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="fileTableBody">
+          <!-- Populated by JS -->
+        </tbody>
+      </table>
+    </div>
+  </main>
+
+  <!-- ===== Right Panel: Filters ===== -->
+  <aside class="right-panel">
+    <div class="panel-header">
+      <span>⚡ 筛选条件</span>
+      <span class="badge" id="filterCount">5 个活跃</span>
+    </div>
+
+    <!-- Size Filter -->
+    <div class="filter-section">
+      <h4>📏 大小筛选</h4>
+      <div class="filter-group">
+        <div class="filter-label"><span>大于</span></div>
+        <div class="filter-input-row">
+          <input type="number" class="filter-input" id="sizeMin" value="1" min="0" step="0.5" oninput="applyFilters()">
+          <select class="filter-select" id="sizeMinUnit" onchange="applyFilters()">
+            <option value="MB">MB</option>
+            <option value="GB">GB</option>
+          </select>
+        </div>
+      </div>
+      <div class="filter-group">
+        <div class="filter-label"><span>小于</span></div>
+        <div class="filter-input-row">
+          <input type="number" class="filter-input" id="sizeMax" value="50" min="0" step="0.5" oninput="applyFilters()">
+          <select class="filter-select" id="sizeMaxUnit" onchange="applyFilters()">
+            <option value="MB" selected>MB</option>
+            <option value="GB">GB</option>
+          </select>
+        </div>
+      </div>
+      <div class="filter-value" id="sizeRangeLabel">1 MB — 50 MB</div>
+    </div>
+
+    <!-- Suffix Filter -->
+    <div class="filter-section">
+      <h4>🏷️ 后缀筛选</h4>
+      <div class="filter-group">
+        <div class="filter-label"><span>包含后缀</span></div>
+        <div class="filter-input-row">
+          <input type="text" class="filter-input" id="suffixInclude" placeholder="js, py, md..." value="js,py" oninput="applyFilters()">
+        </div>
+        <div class="filter-chips" style="margin-top:6px;">
+          <span class="filter-chip active" onclick="toggleChip(this,'suffixInclude')">js</span>
+          <span class="filter-chip active" onclick="toggleChip(this,'suffixInclude')">py</span>
+          <span class="filter-chip" onclick="toggleChip(this,'suffixInclude')">html</span>
+          <span class="filter-chip" onclick="toggleChip(this,'suffixInclude')">css</span>
+          <span class="filter-chip" onclick="toggleChip(this,'suffixInclude')">md</span>
+          <span class="filter-chip" onclick="toggleChip(this,'suffixInclude')">json</span>
+          <span class="filter-chip" onclick="toggleChip(this,'suffixInclude')">jpg</span>
+          <span class="filter-chip" onclick="toggleChip(this,'suffixInclude')">png</span>
+        </div>
+      </div>
+      <div class="filter-group">
+        <div class="filter-label"><span>排除后缀</span></div>
+        <input type="text" class="filter-input" id="suffixExclude" placeholder="tmp, bak, log..." value="tmp,bak" oninput="applyFilters()">
+      </div>
+    </div>
+
+    <!-- Date Filter -->
+    <div class="filter-section">
+      <h4>📅 日期筛选</h4>
+      <div class="filter-group">
+        <div class="filter-label"><span>最近修改时间</span></div>
+        <select class="filter-select" id="dateFilter" onchange="applyFilters()" style="width:100%;">
+          <option value="all">全部时间</option>
+          <option value="today">今天</option>
+          <option value="week" selected>最近一周</option>
+          <option value="month">最近一月</option>
+          <option value="year">最近一年</option>
+          <option value="custom">自定义范围</option>
+        </select>
+      </div>
+      <div class="filter-group" id="customDateRange" style="display:none;">
+        <div class="filter-input-row">
+          <input type="date" class="filter-input" id="dateFrom" value="2026-05-01">
+          <span style="color:var(--text-muted);">—</span>
+          <input type="date" class="filter-input" id="dateTo" value="2026-06-01">
+        </div>
+      </div>
+    </div>
+
+    <!-- File Type Quick Filter -->
+    <div class="filter-section">
+      <h4>📦 文件类型</h4>
+      <div class="filter-group">
+        <div class="filter-toggle">
+          <input type="checkbox" id="fCode" checked onchange="applyFilters()">
+          <label for="fCode">代码文件 (.js, .py, .ts...)</label>
+        </div>
+        <div class="filter-toggle">
+          <input type="checkbox" id="fDoc" checked onchange="applyFilters()">
+          <label for="fDoc">文档 (.md, .pdf, .doc...)</label>
+        </div>
+        <div class="filter-toggle">
+          <input type="checkbox" id="fMedia" checked onchange="applyFilters()">
+          <label for="fMedia">媒体 (.jpg, .png, .mp3...)</label>
+        </div>
+        <div class="filter-toggle">
+          <input type="checkbox" id="fConfig" checked onchange="applyFilters()">
+          <label for="fConfig">配置文件 (.json, .yaml...)</label>
+        </div>
+        <div class="filter-toggle">
+          <input type="checkbox" id="fArchive" onchange="applyFilters()">
+          <label for="fArchive">压缩包 (.zip, .tar...)</label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="filter-section">
+      <button class="filter-apply-btn" onclick="applyFilters()">应用筛选</button>
+      <button class="filter-reset-btn" onclick="resetFilters()">重置所有筛选</button>
+    </div>
+  </aside>
+
+  <!-- ===== Status Bar ===== -->
+  <footer class="statusbar">
+    <div class="statusbar-left">
+      <div class="status-item">
+        <span class="status-dot green"></span>
+        <span>就绪</span>
+      </div>
+      <div class="status-item">总文件: <strong id="statusTotal">0</strong></div>
+      <div class="status-item">显示: <strong id="statusShowing">0</strong></div>
+      <div class="status-item">已选中: <strong id="statusSelected">0</strong></div>
+      <div class="status-item">总大小: <strong id="statusSize">0 B</strong></div>
+    </div>
+    <div class="statusbar-right">
+      <span id="statusTime">扫描耗时: 0 ms</span>
+    </div>
+  </footer>
+</div>
+
+<!-- ===== Export Modal ===== -->
+<div class="modal-overlay" id="exportModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>📊 导出报告</h3>
+      <button class="modal-close" onclick="closeExportModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="filter-group" style="margin-bottom:12px;">
+        <div class="filter-label"><span>导出格式</span></div>
+        <select class="filter-select" id="exportFormat" style="width:100%;">
+          <option value="csv">CSV 电子表格</option>
+          <option value="json">JSON</option>
+          <option value="xlsx">Excel (.xlsx)</option>
+          <option value="html">HTML 报告</option>
+          <option value="pdf">PDF 报告</option>
+        </select>
+      </div>
+      <div class="filter-group" style="margin-bottom:12px;">
+        <div class="filter-toggle">
+          <input type="checkbox" id="exportSelected" checked>
+          <label for="exportSelected">仅导出已选文件</label>
+        </div>
+      </div>
+      <div class="filter-group">
+        <div class="filter-label"><span>包含字段</span></div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          <span class="filter-chip active">文件名</span>
+          <span class="filter-chip active">大小</span>
+          <span class="filter-chip active">类型</span>
+          <span class="filter-chip active">路径</span>
+          <span class="filter-chip active">修改时间</span>
+          <span class="filter-chip">哈希值</span>
+          <span class="filter-chip">重复标记</span>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeExportModal()">取消</button>
+      <button class="btn btn-primary" onclick="doExport()">导出</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Toast Container ===== -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- ==================== JavaScript ==================== -->
+<script>
+// ==================== Mock Data ====================
+const MOCK_FILES = [
+  { name: "app.js", size: 24576, type: ".js", category: "code", date: "2026-05-30 14:23", path: "/home/projects/webapp/src", icon: "⚙️" },
+  { name: "index.html", size: 15360, type: ".html", category: "code", date: "2026-05-29 09:45", path: "/home/projects/webapp", icon: "🌐" },
+  { name: "styles.css", size: 8192, type: ".css", category: "code", date: "2026-05-28 16:12", path: "/home/projects/webapp/src", icon: "🎨" },
+  { name: "README.md", size: 4096, type: ".md", category: "doc", date: "2026-05-27 11:00", path: "/home/projects/webapp", icon: "📄" },
+  { name: "package.json", size: 1024, type: ".json", category: "config", date: "2026-05-26 08:30", path: "/home/projects/webapp", icon: "📦" },
+  { name: "server.py", size: 32768, type: ".py", category: "code", date: "2026-05-30 17:55", path: "/home/projects/webapp/api", icon: "⚙️" },
+  { name: "utils.py", size: 12288, type: ".py", category: "code", date: "2026-05-25 13:20", path: "/home/projects/webapp/lib", icon: "⚙️" },
+  { name: "config.yaml", size: 2048, type: ".yaml", category: "config", date: "2026-05-24 10:15", path: "/home/projects/webapp", icon: "⚙️" },
+  { name: "logo.png", size: 256000, type: ".png", category: "media", date: "2026-05-20 15:00", path: "/home/projects/webapp/assets", icon: "🖼️" },
+  { name: "background.jpg", size: 512000, type: ".jpg", category: "media", date: "2026-05-19 12:30", path: "/home/projects/webapp/assets", icon: "🖼️" },
+  { name: "app.py", size: 18432, type: ".py", category: "code", date: "2026-05-30 20:10", path: "/Users/Files/App", icon: "⚙️" },
+  { name: "database.md", size: 6144, type: ".md", category: "doc", date: "2026-05-28 09:00", path: "/Users/Files/Documents", icon: "📄" },
+  { name: "report.xlsx", size: 102400, type: ".xlsx", category: "doc", date: "2026-05-27 14:30", path: "/Users/Files/Documents", icon: "📊" },
+  { name: "backup.zip", size: 2097152, type: ".zip", category: "archive", date: "2026-05-15 08:00", path: "/Users/Files/Backups", icon: "📦" },
+  { name: "notes.txt", size: 512, type: ".txt", category: "doc", date: "2026-05-30 22:00", path: "/Users/Files/Documents", icon: "📝" },
+  { name: "data.csv", size: 45056, type: ".csv", category: "doc", date: "2026-05-29 11:20", path: "/Users/Files/Documents/data", icon: "📊" },
+  { name: "main.ts", size: 16384, type: ".ts", category: "code", date: "2026-05-30 18:45", path: "/home/projects/api/src", icon: "⚙️" },
+  { name: "test_main.ts", size: 10240, type: ".ts", category: "code", date: "2026-05-30 19:00", path: "/home/projects/api/test", icon: "⚙️" },
+  { name: "Dockerfile", size: 1536, type: ".Dockerfile", category: "config", date: "2026-05-22 16:40", path: "/home/projects/api", icon: "🐳" },
+  { name: "docker-compose.yml", size: 2560, type: ".yml", category: "config", date: "2026-05-22 16:45", path: "/home/projects/api", icon: "🐳" },
+  { name: "audio.mp3", size: 4096000, type: ".mp3", category: "media", date: "2026-05-10 20:00", path: "/home/downloads/music", icon: "🎵" },
+  { name: "video.mp4", size: 15728640, type: ".mp4", category: "media", date: "2026-05-08 14:30", path: "/home/downloads/videos", icon: "🎬" },
+  { name: "presentation.pptx", size: 3072000, type: ".pptx", category: "doc", date: "2026-05-26 10:00", path: "/home/downloads/work", icon: "📊" },
+  { name: "invoice.pdf", size: 81920, type: ".pdf", category: "doc", date: "2026-05-25 09:15", path: "/home/downloads/work", icon: "📄" },
+  { name: "script.sh", size: 3072, type: ".sh", category: "code", date: "2026-05-23 11:30", path: "/home/projects/tools", icon: "🔧" },
+  { name: ".gitignore", size: 768, type: ".gitignore", category: "config", date: "2026-05-01 08:00", path: "/home/projects/webapp", icon: "⚙️" },
+  { name: ".env", size: 256, type: ".env", category: "config", date: "2026-05-01 08:05", path: "/home/projects/webapp", icon: "🔒" },
+  { name: "temp.tmp", size: 102400, type: ".tmp", category: "code", date: "2026-05-30 21:00", path: "/home/projects/webapp/tmp", icon: "📝" },
+  { name: "backup.bak", size: 51200, type: ".bak", category: "code", date: "2026-05-29 23:00", path: "/home/projects/webapp", icon: "📝" },
+  { name: "server.log", size: 204800, type: ".log", category: "code", date: "2026-05-30 22:30", path: "/home/projects/webapp/logs", icon: "📋" },
+  { name: "avatar.svg", size: 5120, type: ".svg", category: "media", date: "2026-05-21 10:00", path: "/home/projects/webapp/assets", icon: "🖼️" },
+  { name: "bundle.js", size: 1024000, type: ".js", category: "code", date: "2026-05-30 16:00", path: "/home/projects/webapp/dist", icon: "⚙️" },
+  { name: "styles.css.map", size: 20480, type: ".map", category: "config", date: "2026-05-28 16:15", path: "/home/projects/webapp/dist", icon: "🔍" },
+  { name: "deploy.yml", size: 4096, type: ".yml", category: "config", date: "2026-05-22 17:00", path: "/home/projects/ci", icon: "🚀" },
+  { name: "workflow.md", size: 8192, type: ".md", category: "doc", date: "2026-05-24 14:00", path: "/home/projects/docs", icon: "📄" },
+  { name: "screenshot.png", size: 1536000, type: ".png", category: "media", date: "2026-05-28 20:00", path: "/home/downloads/screenshots", icon: "🖼️" },
+  { name: "font.woff2", size: 48000, type: ".woff2", category: "code", date: "2026-05-18 11:00", path: "/home/projects/webapp/assets/fonts", icon: "🔤" },
+  { name: "database.sql", size: 65536, type: ".sql", category: "code", date: "2026-05-27 09:30", path: "/home/projects/webapp/migrations", icon: "🗃️" },
+  { name: "manifest.json", size: 1024, type: ".json", category: "config", date: "2026-05-26 08:35", path: "/home/projects/webapp", icon: "📦" },
+  { name: "data_backup.tar.gz", size: 8388608, type: ".tar.gz", category: "archive", date: "2026-05-14 03:00", path: "/Users/Files/Backups", icon: "📦" },
+];
+
+// ==================== State ====================
+let allFiles = [...MOCK_FILES];
+let filteredFiles = [...MOCK_FILES];
+let selectedIds = new Set();
+let currentSort = { field: 'name', asc: true };
+let currentFolder = 0;
+
+// ==================== Render ====================
+function renderTable(files) {
+  const tbody = document.getElementById('fileTableBody');
+  if (!files || files.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7">
+      <div class="empty-state">
+        <span class="icon">📂</span>
+        <p>没有找到匹配的文件</p>
+        <p class="sub">尝试调整筛选条件或选择其他文件夹</p>
+      </div>
+    </td></tr>`;
+    return;
+  }
+  tbody.innerHTML = files.map((f, i) => {
+    const id = `${f.name}_${i}`;
+    const isSelected = selectedIds.has(id);
+    const sizeStr = formatSize(f.size);
+    const typeColor = getCategoryColor(f.category);
+    return `<tr class="${isSelected ? 'selected' : ''}" data-id="${id}">
+      <td class="t-check"><input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleRow('${id}', this.checked)"></td>
+      <td class="t-icon">${f.icon}</td>
+      <td class="t-name" title="${f.name}">${f.name}</td>
+      <td class="t-size">${sizeStr}</td>
+      <td><span class="t-type" style="background:${typeColor};color:#fff;">${f.type}</span></td>
+      <td class="t-date">${f.date}</td>
+      <td class="t-path" title="${f.path}/${f.name}">${f.path}/${f.name}</td>
+      <td class="t-actions">
+        <button title="复制路径" onclick="copyPath('${f.path}/${f.name}')">📋</button>
+        <button title="在资源管理器中显示" onclick="showInExplorer('${f.path}')">📂</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function formatSize(bytes) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+function getCategoryColor(cat) {
+  const colors = {
+    code: '#3b82f6', doc: '#10b981', media: '#f59e0b', config: '#8b5cf6', archive: '#ef4444'
+  };
+  return colors[cat] || '#6b7280';
+}
+
+function updateStatus() {
+  document.getElementById('statusTotal').textContent = allFiles.length;
+  document.getElementById('statusShowing').textContent = filteredFiles.length;
+  document.getElementById('statusSelected').textContent = selectedIds.size;
+  const totalSize = filteredFiles.reduce((s, f) => s + f.size, 0);
+  document.getElementById('statusSize').textContent = formatSize(totalSize);
+  document.getElementById('statusTime').textContent = '扫描耗时: ' + (Math.random() * 500 + 50).toFixed(0) + ' ms';
+  const activeFilters = getActiveFilterCount();
+  document.getElementById('filterCount').textContent = activeFilters + ' 个活跃';
+}
+
+function getActiveFilterCount() {
+  let n = 0;
+  if (document.getElementById('sizeMin').value) n++;
+  if (document.getElementById('sizeMax').value) n++;
+  if (document.getElementById('suffixInclude').value) n++;
+  if (document.getElementById('suffixExclude').value) n++;
+  if (document.getElementById('dateFilter').value !== 'all') n++;
+  if (document.getElementById('fCode').checked) n++;
+  if (document.getElementById('fDoc').checked) n++;
+  if (document.getElementById('fMedia').checked) n++;
+  if (document.getElementById('fConfig').checked) n++;
+  return n;
+}
+
+// ==================== Selection ====================
+function toggleRow(id, checked) {
+  if (checked) selectedIds.add(id); else selectedIds.delete(id);
+  updateStatus();
+  renderTable(filteredFiles);
+}
+
+function toggleSelectAll(el) {
+  const checked = el.checked;
+  if (checked) {
+    filteredFiles.forEach((f, i) => selectedIds.add(`${f.name}_${allFiles.indexOf(f)}`));
+  } else {
+    selectedIds.clear();
+  }
+  updateStatus();
+  renderTable(filteredFiles);
+}
+
+// ==================== Sort ====================
+function handleSort(field) {
+  if (currentSort.field === field) {
+    currentSort.asc = !currentSort.asc;
+  } else {
+    currentSort.field = field;
+    currentSort.asc = true;
+  }
+  // Update sort arrows
+  document.querySelectorAll('.sort-arrow').forEach(el => el.textContent = '');
+  const arrow = document.getElementById('sort-' + field);
+  if (arrow) arrow.textContent = currentSort.asc ? '▲' : '▼';
+
+  sortFiles(field);
+  renderTable(filteredFiles);
+}
+
+function sortFiles(field) {
+  const { field: f, asc } = currentSort;
+  filteredFiles.sort((a, b) => {
+    let va, vb;
+    switch (f) {
+      case 'name': va = a.name; vb = b.name; break;
+      case 'size': va = a.size; vb = b.size; break;
+      case 'type': va = a.type; vb = b.type; break;
+      case 'date': va = a.date; vb = b.date; break;
+      case 'path': va = a.path; vb = b.path; break;
+      default: va = a.name; vb = b.name;
+    }
+    if (typeof va === 'number') return asc ? va - vb : vb - va;
+    return asc ? va.localeCompare(vb) : vb.localeCompare(va);
+  });
+}
+
+// ==================== Search ====================
+function handleSearch(query) {
+  if (!query.trim()) { applyFilters(); return; }
+  const q = query.toLowerCase();
+  filteredFiles = allFiles.filter(f =>
+    f.name.toLowerCase().includes(q) ||
+    f.path.toLowerCase().includes(q) ||
+    f.type.toLowerCase().includes(q) ||
+    f.date.toLowerCase().includes(q)
+  );
+  sortFiles(currentSort.field);
+  renderTable(filteredFiles);
+  updateStatus();
+}
+
+// ==================== Filters ====================
+function applyFilters() {
+  const sizeMinStr = document.getElementById('sizeMin').value;
+  const sizeMaxStr = document.getElementById('sizeMax').value;
+  const sizeMinUnit = document.getElementById('sizeMinUnit').value;
+  const sizeMaxUnit = document.getElementById('sizeMaxUnit').value;
+  const suffixInclude = document.getElementById('suffixInclude').value.toLowerCase();
+  const suffixExclude = document.getElementById('suffixExclude').value.toLowerCase();
+  const dateFilter = document.getElementById('dateFilter').value;
+  const showCode = document.getElementById('fCode').checked;
+  const showDoc = document.getElementById('fDoc').checked;
+  const showMedia = document.getElementById('fMedia').checked;
+  const showConfig = document.getElementById('fConfig').checked;
+
+  // Update range label
+  document.getElementById('sizeRangeLabel').textContent =
+    (sizeMinStr || '0') + ' ' + sizeMinUnit + ' — ' + (sizeMaxStr || '∞') + ' ' + sizeMaxUnit;
+
+  const sizeMin = sizeMinStr ? parseFloat(sizeMinStr) * (sizeMinUnit === 'GB' ? 1048576 : 1024) : 0;
+  const sizeMax = sizeMaxStr ? parseFloat(sizeMaxStr) * (sizeMaxUnit === 'GB' ? 1048576 : 1024) : Infinity;
+
+  // Category mapping
+  const typeMap = {
+    '.js': 'code', '.ts': 'code', '.py': 'code', '.sh': 'code', '.sql': 'code',
+    '.Dockerfile': 'code', '.map': 'code', '.font': 'code',
+    '.md': 'doc', '.pdf': 'doc', '.doc': 'doc', '.xlsx': 'doc', '.txt': 'doc',
+    '.csv': 'doc', '.pptx': 'doc', '.ppt': 'doc',
+    '.jpg': 'media', '.png': 'media', '.mp3': 'media', '.mp4': 'media',
+    '.svg': 'media', '.gif': 'media', '.webp': 'media',
+    '.json': 'config', '.yaml': 'config', '.yml': 'config', '.env': 'config',
+    '.gitignore': 'config', '.css': 'config', '.html': 'config',
+    '.zip': 'archive', '.tar': 'archive', '.tar.gz': 'archive', '.gz': 'archive',
+    '.tmp': 'code', '.bak': 'code', '.log': 'code',
+  };
+
+  filteredFiles = allFiles.filter(f => {
+    // Size filter
+    if (f.size < sizeMin || f.size > sizeMax) return false;
+
+    // Suffix include filter
+    if (suffixInclude.trim()) {
+      const incSuffixes = suffixInclude.split(',').map(s => s.trim()).filter(Boolean);
+      if (!incSuffixes.some(s => f.type.toLowerCase().includes(s))) return false;
+    }
+
+    // Suffix exclude filter
+    if (suffixExclude.trim()) {
+      const excSuffixes = suffixExclude.split(',').map(s => s.trim()).filter(Boolean);
+      if (excSuffixes.some(s => f.type.toLowerCase().includes(s))) return false;
+    }
+
+    // Category filter
+    const cat = typeMap[f.type] || 'code';
+    if (!showCode && cat === 'code') return false;
+    if (!showDoc && cat === 'doc') return false;
+    if (!showMedia && cat === 'media') return false;
+    if (!showConfig && cat === 'config') return false;
+
+    // Date filter
+    if (dateFilter !== 'all' && dateFilter !== 'custom') {
+      const fileDate = new Date(f.date.split(' ')[0]);
+      const now = new Date('2026-06-01');
+      let cutoff;
+      switch (dateFilter) {
+        case 'today': cutoff = new Date(now); cutoff.setHours(0,0,0,0); break;
+        case 'week': cutoff = new Date(now); cutoff.setDate(now.getDate() - 7); break;
+        case 'month': cutoff = new Date(now); cutoff.setMonth(now.getMonth() - 1); break;
+        default: cutoff = null;
+      }
+      if (cutoff && fileDate < cutoff) return false;
+    }
+
+    return true;
+  });
+
+  sortFiles(currentSort.field);
+  renderTable(filteredFiles);
+  updateStatus();
+}
+
+function resetFilters() {
+  document.getElementById('sizeMin').value = '1';
+  document.getElementById('sizeMax').value = '50';
+  document.getElementById('sizeMinUnit').value = 'MB';
+  document.getElementById('sizeMaxUnit').value = 'MB';
+  document.getElementById('suffixInclude').value = '';
+  document.getElementById('suffixExclude').value = '';
+  document.getElementById('dateFilter').value = 'all';
+  document.getElementById('fCode').checked = true;
+  document.getElementById('fDoc').checked = true;
+  document.getElementById('fMedia').checked = true;
+  document.getElementById('fConfig').checked = true;
+  document.getElementById('fArchive').checked = false;
+  document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+  document.getElementById('globalSearch').value = '';
+  allFiles = [...MOCK_FILES];
+  filteredFiles = [...MOCK_FILES];
+  renderTable(filteredFiles);
+  updateStatus();
+  showToast('success', '筛选条件已重置');
+}
+
+function toggleChip(el, targetInput) {
+  el.classList.toggle('active');
+  const input = document.getElementById(targetInput);
+  const vals = Array.from(document.querySelectorAll(`.filter-chip`)).map(c => c.textContent);
+  const active = vals.filter(v => {
+    // Only count active chips that are visible under this container
+    return c => true;
+  });
+  // Simple approach: just rebuild from active chips
+  const parent = el.parentElement;
+  const activeChips = Array.from(parent.querySelectorAll('.filter-chip.active')).map(c => c.textContent);
+  input.value = activeChips.join(', ');
+  applyFilters();
+}
+
+// ==================== Theme ====================
+function toggleTheme() {
+  const html = document.documentElement;
+  const current = html.getAttribute('data-theme');
+  const next = current === 'dark' ? 'light' : 'dark';
+  html.setAttribute('data-theme', next);
+  document.getElementById('themeToggle').querySelector('.icon').textContent = next === 'dark' ? '🌙' : '☀️';
+  showToast('info', next === 'dark' ? '已切换到深色模式' : '已切换到浅色模式');
+}
+
+// ==================== Drag & Drop ====================
+function handleDragOver(e) {
+  e.preventDefault();
+  document.getElementById('dropzone').classList.add('dragover');
+}
+function handleDragLeave(e) {
+  document.getElementById('dropzone').classList.remove('dragover');
+}
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('dropzone').classList.remove('dragover');
+  showToast('success', '文件夹已添加: Downloads');
+}
+function simulateFolderSelect() {
+  showToast('info', '正在选择文件夹...');
+  const dropzone = document.getElementById('dropzone');
+  dropzone.innerHTML = `
+    <span class="icon">✅</span>
+    <p>正在扫描文件夹...</p>
+    <p class="hint">请稍候</p>
+  `;
+  setTimeout(() => {
+    dropzone.innerHTML = `
+      <span class="icon">📥</span>
+      <p>拖入文件夹到这里</p>
+      <p class="hint">或点击此处选择</p>
+    `;
+    showToast('success', '文件夹扫描完成！新增 18 个文件');
+  }, 1500);
+}
+
+// ==================== Folder Panel ====================
+function selectFolder(el, idx) {
+  document.querySelectorAll('.folder-item').forEach(f => f.classList.remove('active'));
+  el.classList.add('active');
+  currentFolder = idx;
+  showToast('info', `已切换到: ${el.querySelector('.fi-name').textContent}`);
+}
+function removeFolder(btn) {
+  const item = btn.closest('.folder-item');
+  item.style.opacity = '0';
+  item.style.transform = 'translateX(-20px)';
+  item.style.transition = 'all 0.3s';
+  setTimeout(() => {
+    item.remove();
+    const count = document.querySelectorAll('.folder-item').length;
+    document.getElementById('folderCount').textContent = count + ' 个文件夹';
+    showToast('info', '文件夹已移除');
+  }, 300);
+}
+
+// ==================== Modals ====================
+function openExportModal() {
+  document.getElementById('exportModal').classList.add('show');
+}
+function closeExportModal() {
+  document.getElementById('exportModal').classList.remove('show');
+}
+function doExport() {
+  const fmt = document.getElementById('exportFormat').value;
+  closeExportModal();
+  showToast('success', `报告已导出为 ${fmt.toUpperCase()} 格式 (${filteredFiles.length} 个文件)`);
+}
+document.getElementById('exportModal').addEventListener('click', function(e) {
+  if (e.target === this) closeExportModal();
+});
+
+// ==================== Toast ====================
+function showToast(type, message) {
+  const container = document.getElementById('toastContainer');
+  const icons = { success: '✅', info: 'ℹ️', warning: '⚠️' };
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.innerHTML = `<span class="toast-icon">${icons[type]}</span><span>${message}</span>`;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.classList.add('out');
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
+
+// ==================== Utility ====================
+function copyPath(path) {
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(path).then(() => showToast('success', '路径已复制到剪贴板'));
+  } else {
+    showToast('info', '路径: ' + path);
+  }
+}
+function showInExplorer(path) {
+  const dir = path.substring(0, path.lastIndexOf('/'));
+  showToast('info', '在资源管理器中打开: ' + dir);
+}
+
+// ==================== Init ====================
+function init() {
+  filteredFiles = [...allFiles];
+  renderTable(filteredFiles);
+  updateStatus();
+  // Set initial sort arrow
+  document.getElementById('sort-name').textContent = '▼';
+}
+
+init();
+</script>
+</body>
+</html>
