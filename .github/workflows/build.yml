@@ -4,8 +4,8 @@ name: Build & Release
 on:
   push:
     tags:
-      - 'v*'  # 推送 v1.0.0 这样的 tag 时触发
-  workflow_dispatch:  # 手动触发
+      - 'v*'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -14,10 +14,13 @@ jobs:
         include:
           - platform: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+            artifact: FilePulse-linux-x64
           - platform: macos-latest
             target: aarch64-apple-darwin
+            artifact: FilePulse-macos-arm64
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
+            artifact: FilePulse-windows-x64
 
     runs-on: ${{ matrix.platform }}
 
@@ -31,7 +34,7 @@ jobs:
         if: matrix.platform == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
 
       - name: Install Tauri CLI
         run: cargo install tauri-cli
@@ -39,7 +42,39 @@ jobs:
       - name: Install frontend deps
         run: npm install
 
-      - name: Build & Release
+      - name: Build (Linux/macOS)
+        if: matrix.platform != 'windows-latest'
+        run: cargo tauri build --target ${{ matrix.target }}
+
+      - name: Build (Windows - 包含便携版)
+        if: matrix.platform == 'windows-latest'
+        run: cargo tauri build --target ${{ matrix.target }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*
+          retention-days: 7
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            FilePulse-linux-x64/**/*
+            FilePulse-macos-arm64/**/*
+            FilePulse-windows-x64/**/*
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: cargo tauri build
