@@ -1,1155 +1,735 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="dark">
+<html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>文件脉搏 FilePulse — 跨平台文件分析筛选工具</title>
+<title>FilePulse — 文件筛选工具</title>
 <style>
-/* ==================== CSS Variables / Theming ==================== */
-:root {
-  --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
-  --transition: 0.25s ease;
-}
-[data-theme="dark"] {
-  --bg-primary: #0f1117;
-  --bg-secondary: #1a1d28;
-  --bg-tertiary: #242836;
-  --bg-hover: #2d3245;
-  --bg-active: #363b50;
-  --border-color: #2d3245;
-  --text-primary: #e8eaf0;
-  --text-secondary: #9ba1b5;
-  --text-muted: #5f6578;
-  --accent: #6c9cff;
-  --accent-hover: #8db4ff;
-  --accent-subtle: rgba(108,155,255,0.12);
-  --success: #5ddb7e;
-  --warning: #ffc157;
-  --danger: #ff6b6b;
-  --shadow: 0 4px 24px rgba(0,0,0,0.4);
-  --scrollbar-track: #1a1d28;
-  --scrollbar-thumb: #363b50;
-}
-[data-theme="light"] {
-  --bg-primary: #f5f7fb;
-  --bg-secondary: #ffffff;
-  --bg-tertiary: #eef1f7;
-  --bg-hover: #e4e8f0;
-  --bg-active: #d8dce8;
-  --border-color: #dce1ec;
-  --text-primary: #1a1d28;
-  --text-secondary: #5f6578;
-  --text-muted: #9ba1b5;
-  --accent: #3b70f7;
-  --accent-hover: #2b5ce0;
-  --accent-subtle: rgba(59,112,247,0.08);
-  --success: #2e9e5c;
-  --warning: #d4940a;
-  --danger: #e03e3e;
-  --shadow: 0 4px 24px rgba(0,0,0,0.08);
-  --scrollbar-track: #eef1f7;
-  --scrollbar-thumb: #c8cdd8;
-}
-
-/* ==================== Reset & Base ==================== */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { height: 100%; overflow: hidden; }
+/* ===== Reset & Base ===== */
+* { box-sizing: border-box; margin: 0; padding: 0; }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, sans-serif;
-  background: var(--bg-primary);
-  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: #f0f2f5;
+  color: #333;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* ===== Layout ===== */
+.container { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
+
+/* ===== Top: Folder Selection ===== */
+.folder-section {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+.folder-section h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: #555; }
+
+.drop-zone {
+  border: 2px dashed #c0c4cc;
+  border-radius: 6px;
+  padding: 32px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  color: #888;
+}
+.drop-zone:hover, .drop-zone.drag-over {
+  border-color: #4a7cf7;
+  background: #f0f5ff;
+}
+.drop-zone .icon { font-size: 28px; margin-bottom: 6px; }
+.drop-zone p { font-size: 13px; }
+.folder-path {
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: #f5f6f8;
+  border-radius: 4px;
   font-size: 13px;
-  line-height: 1.5;
-  transition: background var(--transition), color var(--transition);
+  color: #666;
+  word-break: break-all;
+  display: none;
 }
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: var(--scrollbar-track); }
-::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+.folder-path.show { display: block; }
 
-/* ==================== Layout ==================== */
-.app-container {
-  display: grid;
-  grid-template-rows: 48px 1fr 32px;
-  grid-template-columns: 280px 1fr 260px;
-  height: 100vh;
+/* ===== Middle: Filter Panel ===== */
+.filter-section {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
 }
+.filter-section h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: #555; }
 
-/* ==================== Top Bar ==================== */
-.topbar {
-  grid-column: 1 / -1;
+.filter-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 16px;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-color);
-  z-index: 100;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
 }
-.topbar-left { display: flex; align-items: center; gap: 12px; }
-.topbar-logo {
-  display: flex; align-items: center; gap: 8px;
-  font-size: 15px; font-weight: 700; letter-spacing: -0.3px;
+.filter-row:last-child { margin-bottom: 0; }
+.filter-row input[type="checkbox"] {
+  width: 16px; height: 16px; cursor: pointer; accent-color: #4a7cf7;
 }
-.logo-icon {
-  width: 28px; height: 28px; border-radius: 8px;
-  background: linear-gradient(135deg, var(--accent), #a78bfa);
-  display: flex; align-items: center; justify-content: center;
-  color: #fff; font-size: 14px; font-weight: 800;
+.filter-row label { font-size: 13px; color: #444; cursor: pointer; user-select: none; }
+.filter-row input[type="number"],
+.filter-row input[type="text"] {
+  width: 100px;
+  padding: 4px 8px;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  font-size: 13px;
+  outline: none;
 }
-.topbar-center { display: flex; align-items: center; gap: 4px; }
-.topbar-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 14px; border: none; border-radius: 6px;
-  background: transparent; color: var(--text-secondary);
-  font-size: 12.5px; font-weight: 500; cursor: pointer;
-  transition: all var(--transition);
-  white-space: nowrap;
+.filter-row input[type="number"]:focus,
+.filter-row input[type="text"]:focus {
+  border-color: #4a7cf7;
 }
-.topbar-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
-.topbar-btn:active { transform: scale(0.97); }
-.topbar-btn.active { background: var(--accent-subtle); color: var(--accent); }
-.topbar-btn .icon { font-size: 14px; }
-.topbar-btn.danger:hover { background: rgba(255,107,107,0.12); color: var(--danger); }
-.topbar-right { display: flex; align-items: center; gap: 8px; }
-.search-box {
-  display: flex; align-items: center; gap: 6px;
-  padding: 5px 12px; border-radius: 6px;
-  background: var(--bg-tertiary); border: 1px solid var(--border-color);
-  color: var(--text-primary); font-size: 12.5px;
-  transition: border-color var(--transition);
+.filter-row .reverse-cb {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 12px; color: #888;
 }
-.search-box:focus-within { border-color: var(--accent); }
-.search-box input {
-  border: none; outline: none; background: transparent;
-  color: inherit; font-size: 12.5px; width: 160px;
+.filter-row .reverse-cb input { width: 14px; height: 14px; accent-color: #f08080; }
+.filter-row .input-group {
+  display: flex; align-items: center; gap: 4px;
 }
-.search-box .icon { color: var(--text-muted); font-size: 13px; }
+.filter-row .input-group span { font-size: 12px; color: #888; }
 
-/* ==================== Left Panel (Folder) ==================== */
-.left-panel {
-  background: var(--bg-secondary);
-  border-right: 1px solid var(--border-color);
-  display: flex; flex-direction: column;
-  overflow: hidden;
+/* ===== Action Buttons ===== */
+.action-bar {
+  display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;
 }
-.panel-header {
-  padding: 12px 14px; font-size: 11px; font-weight: 700;
-  text-transform: uppercase; letter-spacing: 0.8px;
-  color: var(--text-muted); border-bottom: 1px solid var(--border-color);
-  display: flex; align-items: center; justify-content: space-between;
-}
-.panel-header .badge {
-  background: var(--accent-subtle); color: var(--accent);
-  padding: 1px 8px; border-radius: 10px; font-size: 10px;
-}
-.folder-dropzone {
-  margin: 12px; padding: 28px 16px;
-  border: 2px dashed var(--border-color);
-  border-radius: 10px; text-align: center;
-  cursor: pointer; transition: all var(--transition);
-  flex-shrink: 0;
-}
-.folder-dropzone:hover, .folder-dropzone.dragover {
-  border-color: var(--accent);
-  background: var(--accent-subtle);
-}
-.folder-dropzone .icon { font-size: 32px; margin-bottom: 8px; display: block; }
-.folder-dropzone p { color: var(--text-secondary); font-size: 12px; }
-.folder-dropzone .hint { color: var(--text-muted); font-size: 11px; margin-top: 4px; }
-.folder-list { flex: 1; overflow-y: auto; padding: 4px 8px; }
-.folder-item {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 10px; border-radius: 6px;
-  cursor: pointer; transition: all var(--transition);
-  margin-bottom: 2px;
-}
-.folder-item:hover { background: var(--bg-hover); }
-.folder-item.active { background: var(--accent-subtle); }
-.folder-item .fi-icon { font-size: 16px; }
-.folder-item .fi-info { flex: 1; min-width: 0; }
-.folder-item .fi-name {
-  font-size: 12px; font-weight: 500;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.folder-item .fi-meta { font-size: 10px; color: var(--text-muted); }
-.folder-item .fi-remove {
-  width: 18px; height: 18px; border-radius: 4px;
-  display: flex; align-items: center; justify-content: center;
-  background: transparent; color: var(--text-muted); cursor: pointer;
-  font-size: 11px; transition: all var(--transition);
+.action-bar button {
+  padding: 7px 16px;
   border: none;
-}
-.folder-item .fi-remove:hover { background: var(--danger); color: #fff; }
-
-/* ==================== Center Panel (File List) ==================== */
-.center-panel {
-  display: flex; flex-direction: column;
-  background: var(--bg-primary); overflow: hidden;
-}
-.file-table-wrap { flex: 1; overflow: auto; }
-.file-table {
-  width: 100%; border-collapse: collapse;
-  table-layout: fixed;
-}
-.file-table col.c0 { width: 40px; }
-.file-table col.c1 { width: 36%; }
-.file-table col.c2 { width: 100px; }
-.file-table col.c3 { width: 80px; }
-.file-table col.c4 { width: 120px; }
-.file-table col.c5 { width: 160px; }
-.file-table thead { position: sticky; top: 0; z-index: 10; }
-.file-table thead th {
-  padding: 8px 12px; font-size: 11px; font-weight: 600;
-  text-transform: uppercase; letter-spacing: 0.5px;
-  color: var(--text-muted); text-align: left;
-  background: var(--bg-tertiary);
-  border-bottom: 1px solid var(--border-color);
-  cursor: pointer; user-select: none;
-  transition: color var(--transition);
-  white-space: nowrap;
-}
-.file-table thead th:hover { color: var(--text-secondary); }
-.file-table thead th .sort-arrow { margin-left: 4px; font-size: 9px; }
-.file-table tbody tr {
-  border-bottom: 1px solid var(--border-color);
-  transition: background var(--transition);
+  border-radius: 5px;
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
 }
-.file-table tbody tr:hover { background: var(--bg-hover); }
-.file-table tbody tr.selected { background: var(--accent-subtle); }
-.file-table tbody tr.selected:hover { background: rgba(108,155,255,0.18); }
-.file-table td {
-  padding: 7px 12px; font-size: 12px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  color: var(--text-primary);
-}
-.file-table td.t-check { text-align: center; }
-.file-table td.t-check input[type="checkbox"] {
-  width: 14px; height: 14px; accent-color: var(--accent);
-  cursor: pointer;
-}
-.file-table td.t-icon { font-size: 15px; text-align: center; }
-.file-table td.t-size {
-  font-family: var(--font-mono); font-size: 11.5px;
-  color: var(--text-secondary);
-}
-.file-table td.t-type {
-  font-size: 11px; padding: 2px 8px; border-radius: 4px;
-  font-weight: 500; display: inline-block;
-}
-.file-table td.t-date { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-secondary); }
-.file-table td.t-path {
-  font-family: var(--font-mono); font-size: 11px;
-  color: var(--text-muted);
-}
-.file-table td.t-actions { text-align: right; }
-.file-table td.t-actions button {
-  width: 24px; height: 24px; border-radius: 5px; border: none;
-  background: transparent; color: var(--text-muted); cursor: pointer;
-  font-size: 12px; transition: all var(--transition);
-  display: inline-flex; align-items: center; justify-content: center;
-}
-.file-table td.t-actions button:hover { background: var(--bg-active); color: var(--text-primary); }
+.action-bar button:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-scan { background: #4a7cf7; color: #fff; }
+.btn-scan:hover:not(:disabled) { background: #3a6ae0; }
+.btn-danger { background: #f05050; color: #fff; }
+.btn-danger:hover:not(:disabled) { background: #d83e3e; }
+.btn-action { background: #e8eaef; color: #444; }
+.btn-action:hover:not(:disabled) { background: #d8dce4; }
 
-/* ==================== Right Panel (Filters) ==================== */
-.right-panel {
-  background: var(--bg-secondary);
-  border-left: 1px solid var(--border-color);
-  display: flex; flex-direction: column; overflow: hidden;
-}
-.filter-section {
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--border-color);
-}
-.filter-section h4 {
-  font-size: 11px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.5px; color: var(--text-muted);
-  margin-bottom: 10px;
-}
-.filter-group { margin-bottom: 8px; }
-.filter-group:last-child { margin-bottom: 0; }
-.filter-label {
-  display: flex; align-items: center; justify-content: space-between;
-  font-size: 12px; color: var(--text-secondary); margin-bottom: 5px;
-}
-.filter-input-row { display: flex; gap: 6px; align-items: center; }
-.filter-input {
-  flex: 1; padding: 5px 8px; border-radius: 5px;
-  background: var(--bg-tertiary); border: 1px solid var(--border-color);
-  color: var(--text-primary); font-size: 12px;
-  transition: border-color var(--transition);
-}
-.filter-input:focus { outline: none; border-color: var(--accent); }
-.filter-select {
-  padding: 5px 8px; border-radius: 5px;
-  background: var(--bg-tertiary); border: 1px solid var(--border-color);
-  color: var(--text-primary); font-size: 12px;
-  cursor: pointer;
-}
-.filter-select:focus { outline: none; border-color: var(--accent); }
-.filter-chips { display: flex; flex-wrap: wrap; gap: 4px; }
-.filter-chip {
-  padding: 3px 10px; border-radius: 12px;
-  font-size: 11px; font-weight: 500;
-  cursor: pointer; transition: all var(--transition);
-  border: 1px solid var(--border-color);
-  background: var(--bg-tertiary); color: var(--text-secondary);
-}
-.filter-chip:hover { border-color: var(--accent); color: var(--accent); }
-.filter-chip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
-.filter-slider { position: relative; width: 100%; }
-.filter-slider input[type="range"] {
-  width: 100%; accent-color: var(--accent);
-}
-.filter-value {
-  font-family: var(--font-mono); font-size: 11px;
-  text-align: right; color: var(--accent); margin-top: 2px;
-}
-.filter-toggle {
-  display: flex; align-items: center; gap: 8px;
-  cursor: pointer; user-select: none;
-}
-.filter-toggle input { accent-color: var(--accent); cursor: pointer; }
-.filter-toggle label { font-size: 12px; color: var(--text-secondary); cursor: pointer; }
-.filter-apply-btn {
-  width: 100%; padding: 8px; border-radius: 6px;
-  background: var(--accent); color: #fff; font-size: 12px;
-  font-weight: 600; border: none; cursor: pointer;
-  transition: all var(--transition);
-  margin-top: 8px;
-}
-.filter-apply-btn:hover { background: var(--accent-hover); }
-.filter-reset-btn {
-  width: 100%; padding: 6px; border-radius: 6px;
-  background: transparent; color: var(--text-muted); font-size: 11px;
-  border: 1px solid var(--border-color); cursor: pointer;
-  transition: all var(--transition);
-  margin-top: 4px;
-}
-.filter-reset-btn:hover { border-color: var(--text-muted); color: var(--text-secondary); }
-
-/* ==================== Status Bar ==================== */
-.statusbar {
-  grid-column: 1 / -1;
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0 16px;
-  background: var(--bg-secondary);
-  border-top: 1px solid var(--border-color);
-  font-size: 11px; color: var(--text-muted);
-}
-.statusbar-left { display: flex; align-items: center; gap: 16px; }
-.status-item { display: flex; align-items: center; gap: 4px; }
-.status-dot { width: 6px; height: 6px; border-radius: 50%; }
-.status-dot.green { background: var(--success); }
-.status-dot.yellow { background: var(--warning); }
-.status-item strong { color: var(--text-secondary); font-weight: 600; }
-
-/* ==================== Modal / Dialog ==================== */
-.modal-overlay {
-  position: fixed; inset: 0; z-index: 1000;
-  background: rgba(0,0,0,0.5);
-  display: none; align-items: center; justify-content: center;
-  backdrop-filter: blur(4px);
-}
-.modal-overlay.show { display: flex; }
-.modal {
-  background: var(--bg-secondary); border-radius: 12px;
-  border: 1px solid var(--border-color);
-  box-shadow: var(--shadow);
-  min-width: 420px; max-width: 500px;
+/* ===== File Table ===== */
+.table-section {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
   overflow: hidden;
 }
-.modal-header {
-  padding: 16px 20px; display: flex; align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid var(--border-color);
+.table-wrap { overflow-x: auto; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
 }
-.modal-header h3 { font-size: 14px; font-weight: 600; }
-.modal-close {
-  width: 28px; height: 28px; border-radius: 6px;
-  border: none; background: transparent; color: var(--text-muted);
-  cursor: pointer; font-size: 16px;
-  display: flex; align-items: center; justify-content: center;
-  transition: all var(--transition);
+thead th {
+  background: #f5f7fa;
+  padding: 9px 12px;
+  text-align: left;
+  font-weight: 600;
+  color: #555;
+  border-bottom: 1px solid #e0e0e0;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  position: relative;
 }
-.modal-close:hover { background: var(--bg-hover); color: var(--text-primary); }
-.modal-body { padding: 20px; }
-.modal-footer {
-  padding: 12px 20px; display: flex; justify-content: flex-end; gap: 8px;
-  border-top: 1px solid var(--border-color);
+thead th:hover { background: #eef1f7; }
+thead th .sort-arrow { font-size: 11px; margin-left: 4px; color: #4a7cf7; }
+tbody td {
+  padding: 8px 12px;
+  border-bottom: 1px solid #f0f0f0;
+  color: #444;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.btn {
-  padding: 7px 16px; border-radius: 6px; font-size: 12px;
-  font-weight: 500; border: none; cursor: pointer;
-  transition: all var(--transition);
-}
-.btn-primary { background: var(--accent); color: #fff; }
-.btn-primary:hover { background: var(--accent-hover); }
-.btn-ghost { background: var(--bg-tertiary); color: var(--text-secondary); }
-.btn-ghost:hover { background: var(--bg-hover); }
+tbody tr:hover { background: #f9fafb; }
+tbody tr.selected { background: #eef3ff; }
+tbody td:first-child { text-align: center; }
+.file-name { font-weight: 500; color: #333; }
+.file-size { color: #666; }
+.file-type { color: #888; }
+.file-date { color: #888; white-space: nowrap; }
+.file-path { color: #999; font-size: 12px; }
 
-/* ==================== Toast ==================== */
-.toast-container {
-  position: fixed; bottom: 44px; right: 16px; z-index: 2000;
-  display: flex; flex-direction: column; gap: 8px;
-}
-.toast {
-  padding: 10px 16px; border-radius: 8px;
-  background: var(--bg-secondary); border: 1px solid var(--border-color);
-  box-shadow: var(--shadow);
-  font-size: 12px; color: var(--text-primary);
-  display: flex; align-items: center; gap: 8px;
-  animation: toastIn 0.3s ease;
-  max-width: 320px;
-}
-.toast.out { animation: toastOut 0.3s ease forwards; }
-@keyframes toastIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes toastOut { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(10px); } }
-.toast-icon { font-size: 15px; }
-.toast.success .toast-icon { color: var(--success); }
-.toast.info .toast-icon { color: var(--accent); }
-.toast.warning .toast-icon { color: var(--warning); }
-
-/* ==================== Empty / State Helpers ==================== */
 .empty-state {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  height: 100%; color: var(--text-muted); text-align: center; padding: 40px;
+  text-align: center;
+  padding: 40px 20px;
+  color: #aaa;
+  font-size: 13px;
 }
-.empty-state .icon { font-size: 48px; margin-bottom: 12px; opacity: 0.5; }
-.empty-state p { font-size: 13px; margin-bottom: 4px; }
-.empty-state .sub { font-size: 11px; }
 
-/* ==================== Animations ==================== */
-@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
-.skeleton { animation: pulse 1.5s infinite; background: var(--bg-tertiary); border-radius: 4px; }
+.totals-bar {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #888;
+  background: #fafbfc;
+  border-top: 1px solid #f0f0f0;
+}
 
-/* ==================== Responsive ==================== */
-@media (max-width: 1024px) {
-  .app-container { grid-template-columns: 220px 1fr 220px; }
+/* ===== Toast ===== */
+.toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(80px);
+  background: #333;
+  color: #fff;
+  padding: 8px 20px;
+  border-radius: 6px;
+  font-size: 13px;
+  opacity: 0;
+  transition: transform 0.3s, opacity 0.3s;
+  z-index: 999;
+  pointer-events: none;
 }
-@media (max-width: 768px) {
-  .app-container {
-    grid-template-columns: 1fr;
-    grid-template-rows: 48px 1fr 32px;
-  }
-  .left-panel, .right-panel { display: none; }
-  .topbar-center { display: none; }
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ===== Confirm Modal ===== */
+.modal-mask {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.35);
+  display: none; align-items: center; justify-content: center; z-index: 1000;
 }
+.modal-mask.show { display: flex; }
+.modal-box {
+  background: #fff; border-radius: 8px; padding: 24px;
+  width: 360px; max-width: 90vw; box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+}
+.modal-box h4 { font-size: 15px; margin-bottom: 10px; }
+.modal-box p { font-size: 13px; color: #666; margin-bottom: 18px; line-height: 1.5; }
+.modal-box .btns { display: flex; gap: 8px; justify-content: flex-end; }
+.modal-box button {
+  padding: 6px 16px; border-radius: 5px; border: none;
+  font-size: 13px; cursor: pointer; font-weight: 500;
+}
+.modal-box .btn-confirm { background: #f05050; color: #fff; }
+.modal-box .btn-cancel { background: #e8eaef; color: #444; }
 </style>
 </head>
 <body>
 
-<!-- ==================== App Container ==================== -->
-<div class="app-container">
+<div class="container">
+  <!-- ===== Folder Selection ===== -->
+  <div class="folder-section">
+    <h3>📂 选择文件夹</h3>
+    <div class="drop-zone" id="dropZone" onclick="document.getElementById('folderInput').click()">
+      <div class="icon">📁</div>
+      <p>拖入文件夹到这里，或点击选择</p>
+    </div>
+    <input type="file" id="folderInput" webkitdirectory directory multiple style="display:none">
+    <div class="folder-path" id="folderPath"></div>
+  </div>
 
-  <!-- ===== Top Bar ===== -->
-  <header class="topbar">
-    <div class="topbar-left">
-      <div class="topbar-logo">
-        <div class="logo-icon">F</div>
-        <span>FilePulse</span>
-      </div>
-    </div>
-    <div class="topbar-center">
-      <button class="topbar-btn active" onclick="showToast('info','已加载扫描引擎 v3.2')">
-        <span class="icon">📂</span> 扫描文件夹
-      </button>
-      <button class="topbar-btn" onclick="showToast('info','正在检测重复文件...')">
-        <span class="icon">🔍</span> 重复检测
-      </button>
-      <button class="topbar-btn" onclick="showToast('info','正在查找空文件夹...')">
-        <span class="icon">📁</span> 空文件夹
-      </button>
-      <button class="topbar-btn" onclick="showToast('info','正在解散文件夹...')">
-        <span class="icon">↩️</span> 解散文件夹
-      </button>
-      <button class="topbar-btn" onclick="openExportModal()">
-        <span class="icon">📊</span> 导出报告
-      </button>
-    </div>
-    <div class="topbar-right">
-      <div class="search-box">
-        <span class="icon">🔎</span>
-        <input type="text" placeholder="搜索文件名..." id="globalSearch" oninput="handleSearch(this.value)">
-      </div>
-      <button class="topbar-btn" id="themeToggle" onclick="toggleTheme()">
-        <span class="icon">🌙</span>
-      </button>
-    </div>
-  </header>
+  <!-- ===== Filter Panel ===== -->
+  <div class="filter-section">
+    <h3>🔍 筛选条件（勾选生效）</h3>
 
-  <!-- ===== Left Panel: Folder Selection ===== -->
-  <aside class="left-panel">
-    <div class="panel-header">
-      <span>📂 文件夹</span>
-      <span class="badge" id="folderCount">3 个文件夹</span>
-    </div>
-    <div class="folder-dropzone" id="dropzone"
-         ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)"
-         ondrop="handleDrop(event)" onclick="simulateFolderSelect()">
-      <span class="icon">📥</span>
-      <p>拖入文件夹到这里</p>
-      <p class="hint">或点击此处选择</p>
-    </div>
-    <div class="folder-list" id="folderList">
-      <div class="folder-item active" onclick="selectFolder(this, 0)">
-        <span class="fi-icon">📁</span>
-        <div class="fi-info">
-          <div class="fi-name">D:\Projects\WebApp</div>
-          <div class="fi-meta">42 文件 · 128 MB</div>
-        </div>
-        <button class="fi-remove" onclick="event.stopPropagation(); removeFolder(this)" title="移除">✕</button>
+    <!-- 大于 -->
+    <div class="filter-row">
+      <input type="checkbox" id="f_sizeGt" data-filter="sizeGt">
+      <label for="f_sizeGt">大于</label>
+      <div class="input-group">
+        <input type="number" id="f_sizeGtVal" value="100" min="0">
+        <span>MB</span>
       </div>
-      <div class="folder-item" onclick="selectFolder(this, 1)">
-        <span class="fi-icon">📁</span>
-        <div class="fi-info">
-          <div class="fi-name">/Users/Files/Documents</div>
-          <div class="fi-meta">31 文件 · 85 MB</div>
-        </div>
-        <button class="fi-remove" onclick="event.stopPropagation(); removeFolder(this)" title="移除">✕</button>
-      </div>
-      <div class="folder-item" onclick="selectFolder(this, 2)">
-        <span class="fi-icon">📁</span>
-        <div class="fi-info">
-          <div class="fi-name">/home/downloads</div>
-          <div class="fi-meta">56 文件 · 320 MB</div>
-        </div>
-        <button class="fi-remove" onclick="event.stopPropagation(); removeFolder(this)" title="移除">✕</button>
-      </div>
+      <label class="reverse-cb"><input type="checkbox" data-reverse="f_sizeGt">取反</label>
     </div>
-  </aside>
 
-  <!-- ===== Center Panel: File List ===== -->
-  <main class="center-panel">
-    <div class="file-table-wrap">
-      <table class="file-table" id="fileTable">
-        <colgroup>
-          <col class="c0"><col class="c1"><col class="c2"><col class="c3"><col class="c4"><col class="c5"><col class="c0">
-        </colgroup>
+    <!-- 小于 -->
+    <div class="filter-row">
+      <input type="checkbox" id="f_sizeLt" data-filter="sizeLt">
+      <label for="f_sizeLt">小于</label>
+      <div class="input-group">
+        <input type="number" id="f_sizeLtVal" value="10" min="0">
+        <span>MB</span>
+      </div>
+      <label class="reverse-cb"><input type="checkbox" data-reverse="f_sizeLt">取反</label>
+    </div>
+
+    <!-- 后缀等于 -->
+    <div class="filter-row">
+      <input type="checkbox" id="f_extEq" data-filter="extEq">
+      <label for="f_extEq">后缀等于</label>
+      <input type="text" id="f_extEqVal" placeholder=".txt,.jpg,*.mp*" style="width:200px">
+      <label class="reverse-cb"><input type="checkbox" data-reverse="f_extEq">取反</label>
+    </div>
+
+    <!-- 后缀不等于 -->
+    <div class="filter-row">
+      <input type="checkbox" id="f_extNe" data-filter="extNe">
+      <label for="f_extNe">后缀不等于</label>
+      <input type="text" id="f_extNeVal" placeholder=".tmp,.log" style="width:200px">
+      <label class="reverse-cb"><input type="checkbox" data-reverse="f_extNe">取反</label>
+    </div>
+
+    <!-- 修改日期 -->
+    <div class="filter-row">
+      <input type="checkbox" id="f_days" data-filter="days">
+      <label for="f_days">修改日期在</label>
+      <div class="input-group">
+        <input type="number" id="f_daysVal" value="30" min="0">
+        <span>天内</span>
+      </div>
+      <label class="reverse-cb"><input type="checkbox" data-reverse="f_days">取反</label>
+    </div>
+
+    <!-- 空文件夹 -->
+    <div class="filter-row">
+      <input type="checkbox" id="f_empty" data-filter="empty">
+      <label for="f_empty">空文件夹</label>
+      <label class="reverse-cb"><input type="checkbox" data-reverse="f_empty">取反</label>
+    </div>
+  </div>
+
+  <!-- ===== Action Buttons ===== -->
+  <div class="action-bar">
+    <button class="btn-scan" id="btnScan" disabled>🔍 扫描</button>
+    <button class="btn-danger" id="btnDelete" disabled>🗑 删除选中</button>
+    <button class="btn-action" id="btnDisband" disabled>📦 解散文件夹</button>
+    <button class="btn-action" id="btnExport" disabled>📄 导出列表</button>
+    <label style="display:inline-flex;align-items:center;gap:4px;font-size:13px;color:#666;cursor:pointer;margin-left:auto">
+      <input type="checkbox" id="chkSelectAll" style="width:16px;height:16px;accent-color:#4a7cf7"> 全选
+    </label>
+  </div>
+
+  <!-- ===== File Table ===== -->
+  <div class="table-section">
+    <div class="table-wrap">
+      <table id="fileTable">
         <thead>
           <tr>
-            <th class="t-check"><input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)"></th>
-            <th data-sort="name" onclick="handleSort('name')">文件名 <span class="sort-arrow" id="sort-name"></span></th>
-            <th data-sort="size" onclick="handleSort('size')">大小 <span class="sort-arrow" id="sort-size"></span></th>
-            <th data-sort="type" onclick="handleSort('type')">类型 <span class="sort-arrow" id="sort-type"></span></th>
-            <th data-sort="date" onclick="handleSort('date')">修改时间 <span class="sort-arrow" id="sort-date"></span></th>
-            <th data-sort="path" onclick="handleSort('path')">路径 <span class="sort-arrow" id="sort-path"></span></th>
-            <th></th>
+            <th style="width:40px"><input type="checkbox" id="thSelectAll" style="width:15px;height:15px;accent-color:#4a7cf7"></th>
+            <th data-sort="name">文件名 <span class="sort-arrow"></span></th>
+            <th data-sort="size">大小 <span class="sort-arrow"></span></th>
+            <th data-sort="type">类型 <span class="sort-arrow"></span></th>
+            <th data-sort="modified">修改时间 <span class="sort-arrow"></span></th>
+            <th data-sort="path">路径 <span class="sort-arrow"></span></th>
           </tr>
         </thead>
-        <tbody id="fileTableBody">
-          <!-- Populated by JS -->
+        <tbody id="fileBody">
+          <tr><td colspan="6" class="empty-state">选择文件夹后点击"扫描"开始</td></tr>
         </tbody>
       </table>
     </div>
-  </main>
-
-  <!-- ===== Right Panel: Filters ===== -->
-  <aside class="right-panel">
-    <div class="panel-header">
-      <span>⚡ 筛选条件</span>
-      <span class="badge" id="filterCount">5 个活跃</span>
-    </div>
-
-    <!-- Size Filter -->
-    <div class="filter-section">
-      <h4>📏 大小筛选</h4>
-      <div class="filter-group">
-        <div class="filter-label"><span>大于</span></div>
-        <div class="filter-input-row">
-          <input type="number" class="filter-input" id="sizeMin" value="1" min="0" step="0.5" oninput="applyFilters()">
-          <select class="filter-select" id="sizeMinUnit" onchange="applyFilters()">
-            <option value="MB">MB</option>
-            <option value="GB">GB</option>
-          </select>
-        </div>
-      </div>
-      <div class="filter-group">
-        <div class="filter-label"><span>小于</span></div>
-        <div class="filter-input-row">
-          <input type="number" class="filter-input" id="sizeMax" value="50" min="0" step="0.5" oninput="applyFilters()">
-          <select class="filter-select" id="sizeMaxUnit" onchange="applyFilters()">
-            <option value="MB" selected>MB</option>
-            <option value="GB">GB</option>
-          </select>
-        </div>
-      </div>
-      <div class="filter-value" id="sizeRangeLabel">1 MB — 50 MB</div>
-    </div>
-
-    <!-- Suffix Filter -->
-    <div class="filter-section">
-      <h4>🏷️ 后缀筛选</h4>
-      <div class="filter-group">
-        <div class="filter-label"><span>包含后缀</span></div>
-        <div class="filter-input-row">
-          <input type="text" class="filter-input" id="suffixInclude" placeholder="js, py, md..." value="js,py" oninput="applyFilters()">
-        </div>
-        <div class="filter-chips" style="margin-top:6px;">
-          <span class="filter-chip active" onclick="toggleChip(this,'suffixInclude')">js</span>
-          <span class="filter-chip active" onclick="toggleChip(this,'suffixInclude')">py</span>
-          <span class="filter-chip" onclick="toggleChip(this,'suffixInclude')">html</span>
-          <span class="filter-chip" onclick="toggleChip(this,'suffixInclude')">css</span>
-          <span class="filter-chip" onclick="toggleChip(this,'suffixInclude')">md</span>
-          <span class="filter-chip" onclick="toggleChip(this,'suffixInclude')">json</span>
-          <span class="filter-chip" onclick="toggleChip(this,'suffixInclude')">jpg</span>
-          <span class="filter-chip" onclick="toggleChip(this,'suffixInclude')">png</span>
-        </div>
-      </div>
-      <div class="filter-group">
-        <div class="filter-label"><span>排除后缀</span></div>
-        <input type="text" class="filter-input" id="suffixExclude" placeholder="tmp, bak, log..." value="tmp,bak" oninput="applyFilters()">
-      </div>
-    </div>
-
-    <!-- Date Filter -->
-    <div class="filter-section">
-      <h4>📅 日期筛选</h4>
-      <div class="filter-group">
-        <div class="filter-label"><span>最近修改时间</span></div>
-        <select class="filter-select" id="dateFilter" onchange="applyFilters()" style="width:100%;">
-          <option value="all">全部时间</option>
-          <option value="today">今天</option>
-          <option value="week" selected>最近一周</option>
-          <option value="month">最近一月</option>
-          <option value="year">最近一年</option>
-          <option value="custom">自定义范围</option>
-        </select>
-      </div>
-      <div class="filter-group" id="customDateRange" style="display:none;">
-        <div class="filter-input-row">
-          <input type="date" class="filter-input" id="dateFrom" value="2026-05-01">
-          <span style="color:var(--text-muted);">—</span>
-          <input type="date" class="filter-input" id="dateTo" value="2026-06-01">
-        </div>
-      </div>
-    </div>
-
-    <!-- File Type Quick Filter -->
-    <div class="filter-section">
-      <h4>📦 文件类型</h4>
-      <div class="filter-group">
-        <div class="filter-toggle">
-          <input type="checkbox" id="fCode" checked onchange="applyFilters()">
-          <label for="fCode">代码文件 (.js, .py, .ts...)</label>
-        </div>
-        <div class="filter-toggle">
-          <input type="checkbox" id="fDoc" checked onchange="applyFilters()">
-          <label for="fDoc">文档 (.md, .pdf, .doc...)</label>
-        </div>
-        <div class="filter-toggle">
-          <input type="checkbox" id="fMedia" checked onchange="applyFilters()">
-          <label for="fMedia">媒体 (.jpg, .png, .mp3...)</label>
-        </div>
-        <div class="filter-toggle">
-          <input type="checkbox" id="fConfig" checked onchange="applyFilters()">
-          <label for="fConfig">配置文件 (.json, .yaml...)</label>
-        </div>
-        <div class="filter-toggle">
-          <input type="checkbox" id="fArchive" onchange="applyFilters()">
-          <label for="fArchive">压缩包 (.zip, .tar...)</label>
-        </div>
-      </div>
-    </div>
-
-    <!-- Actions -->
-    <div class="filter-section">
-      <button class="filter-apply-btn" onclick="applyFilters()">应用筛选</button>
-      <button class="filter-reset-btn" onclick="resetFilters()">重置所有筛选</button>
-    </div>
-  </aside>
-
-  <!-- ===== Status Bar ===== -->
-  <footer class="statusbar">
-    <div class="statusbar-left">
-      <div class="status-item">
-        <span class="status-dot green"></span>
-        <span>就绪</span>
-      </div>
-      <div class="status-item">总文件: <strong id="statusTotal">0</strong></div>
-      <div class="status-item">显示: <strong id="statusShowing">0</strong></div>
-      <div class="status-item">已选中: <strong id="statusSelected">0</strong></div>
-      <div class="status-item">总大小: <strong id="statusSize">0 B</strong></div>
-    </div>
-    <div class="statusbar-right">
-      <span id="statusTime">扫描耗时: 0 ms</span>
-    </div>
-  </footer>
+    <div class="totals-bar" id="totalsBar"></div>
+  </div>
 </div>
 
-<!-- ===== Export Modal ===== -->
-<div class="modal-overlay" id="exportModal">
-  <div class="modal">
-    <div class="modal-header">
-      <h3>📊 导出报告</h3>
-      <button class="modal-close" onclick="closeExportModal()">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="filter-group" style="margin-bottom:12px;">
-        <div class="filter-label"><span>导出格式</span></div>
-        <select class="filter-select" id="exportFormat" style="width:100%;">
-          <option value="csv">CSV 电子表格</option>
-          <option value="json">JSON</option>
-          <option value="xlsx">Excel (.xlsx)</option>
-          <option value="html">HTML 报告</option>
-          <option value="pdf">PDF 报告</option>
-        </select>
-      </div>
-      <div class="filter-group" style="margin-bottom:12px;">
-        <div class="filter-toggle">
-          <input type="checkbox" id="exportSelected" checked>
-          <label for="exportSelected">仅导出已选文件</label>
-        </div>
-      </div>
-      <div class="filter-group">
-        <div class="filter-label"><span>包含字段</span></div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;">
-          <span class="filter-chip active">文件名</span>
-          <span class="filter-chip active">大小</span>
-          <span class="filter-chip active">类型</span>
-          <span class="filter-chip active">路径</span>
-          <span class="filter-chip active">修改时间</span>
-          <span class="filter-chip">哈希值</span>
-          <span class="filter-chip">重复标记</span>
-        </div>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeExportModal()">取消</button>
-      <button class="btn btn-primary" onclick="doExport()">导出</button>
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Confirm Modal -->
+<div class="modal-mask" id="confirmModal">
+  <div class="modal-box">
+    <h4 id="confirmTitle">确认</h4>
+    <p id="confirmMsg"></p>
+    <div class="btns">
+      <button class="btn-cancel" id="confirmCancel">取消</button>
+      <button class="btn-confirm" id="confirmOk">确认</button>
     </div>
   </div>
 </div>
 
-<!-- ===== Toast Container ===== -->
-<div class="toast-container" id="toastContainer"></div>
-
-<!-- ==================== JavaScript ==================== -->
 <script>
-// ==================== Mock Data ====================
-const MOCK_FILES = [
-  { name: "app.js", size: 24576, type: ".js", category: "code", date: "2026-05-30 14:23", path: "/home/projects/webapp/src", icon: "⚙️" },
-  { name: "index.html", size: 15360, type: ".html", category: "code", date: "2026-05-29 09:45", path: "/home/projects/webapp", icon: "🌐" },
-  { name: "styles.css", size: 8192, type: ".css", category: "code", date: "2026-05-28 16:12", path: "/home/projects/webapp/src", icon: "🎨" },
-  { name: "README.md", size: 4096, type: ".md", category: "doc", date: "2026-05-27 11:00", path: "/home/projects/webapp", icon: "📄" },
-  { name: "package.json", size: 1024, type: ".json", category: "config", date: "2026-05-26 08:30", path: "/home/projects/webapp", icon: "📦" },
-  { name: "server.py", size: 32768, type: ".py", category: "code", date: "2026-05-30 17:55", path: "/home/projects/webapp/api", icon: "⚙️" },
-  { name: "utils.py", size: 12288, type: ".py", category: "code", date: "2026-05-25 13:20", path: "/home/projects/webapp/lib", icon: "⚙️" },
-  { name: "config.yaml", size: 2048, type: ".yaml", category: "config", date: "2026-05-24 10:15", path: "/home/projects/webapp", icon: "⚙️" },
-  { name: "logo.png", size: 256000, type: ".png", category: "media", date: "2026-05-20 15:00", path: "/home/projects/webapp/assets", icon: "🖼️" },
-  { name: "background.jpg", size: 512000, type: ".jpg", category: "media", date: "2026-05-19 12:30", path: "/home/projects/webapp/assets", icon: "🖼️" },
-  { name: "app.py", size: 18432, type: ".py", category: "code", date: "2026-05-30 20:10", path: "/Users/Files/App", icon: "⚙️" },
-  { name: "database.md", size: 6144, type: ".md", category: "doc", date: "2026-05-28 09:00", path: "/Users/Files/Documents", icon: "📄" },
-  { name: "report.xlsx", size: 102400, type: ".xlsx", category: "doc", date: "2026-05-27 14:30", path: "/Users/Files/Documents", icon: "📊" },
-  { name: "backup.zip", size: 2097152, type: ".zip", category: "archive", date: "2026-05-15 08:00", path: "/Users/Files/Backups", icon: "📦" },
-  { name: "notes.txt", size: 512, type: ".txt", category: "doc", date: "2026-05-30 22:00", path: "/Users/Files/Documents", icon: "📝" },
-  { name: "data.csv", size: 45056, type: ".csv", category: "doc", date: "2026-05-29 11:20", path: "/Users/Files/Documents/data", icon: "📊" },
-  { name: "main.ts", size: 16384, type: ".ts", category: "code", date: "2026-05-30 18:45", path: "/home/projects/api/src", icon: "⚙️" },
-  { name: "test_main.ts", size: 10240, type: ".ts", category: "code", date: "2026-05-30 19:00", path: "/home/projects/api/test", icon: "⚙️" },
-  { name: "Dockerfile", size: 1536, type: ".Dockerfile", category: "config", date: "2026-05-22 16:40", path: "/home/projects/api", icon: "🐳" },
-  { name: "docker-compose.yml", size: 2560, type: ".yml", category: "config", date: "2026-05-22 16:45", path: "/home/projects/api", icon: "🐳" },
-  { name: "audio.mp3", size: 4096000, type: ".mp3", category: "media", date: "2026-05-10 20:00", path: "/home/downloads/music", icon: "🎵" },
-  { name: "video.mp4", size: 15728640, type: ".mp4", category: "media", date: "2026-05-08 14:30", path: "/home/downloads/videos", icon: "🎬" },
-  { name: "presentation.pptx", size: 3072000, type: ".pptx", category: "doc", date: "2026-05-26 10:00", path: "/home/downloads/work", icon: "📊" },
-  { name: "invoice.pdf", size: 81920, type: ".pdf", category: "doc", date: "2026-05-25 09:15", path: "/home/downloads/work", icon: "📄" },
-  { name: "script.sh", size: 3072, type: ".sh", category: "code", date: "2026-05-23 11:30", path: "/home/projects/tools", icon: "🔧" },
-  { name: ".gitignore", size: 768, type: ".gitignore", category: "config", date: "2026-05-01 08:00", path: "/home/projects/webapp", icon: "⚙️" },
-  { name: ".env", size: 256, type: ".env", category: "config", date: "2026-05-01 08:05", path: "/home/projects/webapp", icon: "🔒" },
-  { name: "temp.tmp", size: 102400, type: ".tmp", category: "code", date: "2026-05-30 21:00", path: "/home/projects/webapp/tmp", icon: "📝" },
-  { name: "backup.bak", size: 51200, type: ".bak", category: "code", date: "2026-05-29 23:00", path: "/home/projects/webapp", icon: "📝" },
-  { name: "server.log", size: 204800, type: ".log", category: "code", date: "2026-05-30 22:30", path: "/home/projects/webapp/logs", icon: "📋" },
-  { name: "avatar.svg", size: 5120, type: ".svg", category: "media", date: "2026-05-21 10:00", path: "/home/projects/webapp/assets", icon: "🖼️" },
-  { name: "bundle.js", size: 1024000, type: ".js", category: "code", date: "2026-05-30 16:00", path: "/home/projects/webapp/dist", icon: "⚙️" },
-  { name: "styles.css.map", size: 20480, type: ".map", category: "config", date: "2026-05-28 16:15", path: "/home/projects/webapp/dist", icon: "🔍" },
-  { name: "deploy.yml", size: 4096, type: ".yml", category: "config", date: "2026-05-22 17:00", path: "/home/projects/ci", icon: "🚀" },
-  { name: "workflow.md", size: 8192, type: ".md", category: "doc", date: "2026-05-24 14:00", path: "/home/projects/docs", icon: "📄" },
-  { name: "screenshot.png", size: 1536000, type: ".png", category: "media", date: "2026-05-28 20:00", path: "/home/downloads/screenshots", icon: "🖼️" },
-  { name: "font.woff2", size: 48000, type: ".woff2", category: "code", date: "2026-05-18 11:00", path: "/home/projects/webapp/assets/fonts", icon: "🔤" },
-  { name: "database.sql", size: 65536, type: ".sql", category: "code", date: "2026-05-27 09:30", path: "/home/projects/webapp/migrations", icon: "🗃️" },
-  { name: "manifest.json", size: 1024, type: ".json", category: "config", date: "2026-05-26 08:35", path: "/home/projects/webapp", icon: "📦" },
-  { name: "data_backup.tar.gz", size: 8388608, type: ".tar.gz", category: "archive", date: "2026-05-14 03:00", path: "/Users/Files/Backups", icon: "📦" },
-];
+// ===== Mock Data Generator =====
+const MOCK_DIR = '/Users/alice/Downloads/MockScan';
 
-// ==================== State ====================
-let allFiles = [...MOCK_FILES];
-let filteredFiles = [...MOCK_FILES];
-let selectedIds = new Set();
-let currentSort = { field: 'name', asc: true };
-let currentFolder = 0;
-
-// ==================== Render ====================
-function renderTable(files) {
-  const tbody = document.getElementById('fileTableBody');
-  if (!files || files.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="7">
-      <div class="empty-state">
-        <span class="icon">📂</span>
-        <p>没有找到匹配的文件</p>
-        <p class="sub">尝试调整筛选条件或选择其他文件夹</p>
-      </div>
-    </td></tr>`;
-    return;
-  }
-  tbody.innerHTML = files.map((f, i) => {
-    const id = `${f.name}_${i}`;
-    const isSelected = selectedIds.has(id);
-    const sizeStr = formatSize(f.size);
-    const typeColor = getCategoryColor(f.category);
-    return `<tr class="${isSelected ? 'selected' : ''}" data-id="${id}">
-      <td class="t-check"><input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleRow('${id}', this.checked)"></td>
-      <td class="t-icon">${f.icon}</td>
-      <td class="t-name" title="${f.name}">${f.name}</td>
-      <td class="t-size">${sizeStr}</td>
-      <td><span class="t-type" style="background:${typeColor};color:#fff;">${f.type}</span></td>
-      <td class="t-date">${f.date}</td>
-      <td class="t-path" title="${f.path}/${f.name}">${f.path}/${f.name}</td>
-      <td class="t-actions">
-        <button title="复制路径" onclick="copyPath('${f.path}/${f.name}')">📋</button>
-        <button title="在资源管理器中显示" onclick="showInExplorer('${f.path}')">📂</button>
-      </td>
-    </tr>`;
-  }).join('');
-}
-
-function formatSize(bytes) {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-}
-
-function getCategoryColor(cat) {
-  const colors = {
-    code: '#3b82f6', doc: '#10b981', media: '#f59e0b', config: '#8b5cf6', archive: '#ef4444'
-  };
-  return colors[cat] || '#6b7280';
-}
-
-function updateStatus() {
-  document.getElementById('statusTotal').textContent = allFiles.length;
-  document.getElementById('statusShowing').textContent = filteredFiles.length;
-  document.getElementById('statusSelected').textContent = selectedIds.size;
-  const totalSize = filteredFiles.reduce((s, f) => s + f.size, 0);
-  document.getElementById('statusSize').textContent = formatSize(totalSize);
-  document.getElementById('statusTime').textContent = '扫描耗时: ' + (Math.random() * 500 + 50).toFixed(0) + ' ms';
-  const activeFilters = getActiveFilterCount();
-  document.getElementById('filterCount').textContent = activeFilters + ' 个活跃';
-}
-
-function getActiveFilterCount() {
-  let n = 0;
-  if (document.getElementById('sizeMin').value) n++;
-  if (document.getElementById('sizeMax').value) n++;
-  if (document.getElementById('suffixInclude').value) n++;
-  if (document.getElementById('suffixExclude').value) n++;
-  if (document.getElementById('dateFilter').value !== 'all') n++;
-  if (document.getElementById('fCode').checked) n++;
-  if (document.getElementById('fDoc').checked) n++;
-  if (document.getElementById('fMedia').checked) n++;
-  if (document.getElementById('fConfig').checked) n++;
-  return n;
-}
-
-// ==================== Selection ====================
-function toggleRow(id, checked) {
-  if (checked) selectedIds.add(id); else selectedIds.delete(id);
-  updateStatus();
-  renderTable(filteredFiles);
-}
-
-function toggleSelectAll(el) {
-  const checked = el.checked;
-  if (checked) {
-    filteredFiles.forEach((f, i) => selectedIds.add(`${f.name}_${allFiles.indexOf(f)}`));
-  } else {
-    selectedIds.clear();
-  }
-  updateStatus();
-  renderTable(filteredFiles);
-}
-
-// ==================== Sort ====================
-function handleSort(field) {
-  if (currentSort.field === field) {
-    currentSort.asc = !currentSort.asc;
-  } else {
-    currentSort.field = field;
-    currentSort.asc = true;
-  }
-  // Update sort arrows
-  document.querySelectorAll('.sort-arrow').forEach(el => el.textContent = '');
-  const arrow = document.getElementById('sort-' + field);
-  if (arrow) arrow.textContent = currentSort.asc ? '▲' : '▼';
-
-  sortFiles(field);
-  renderTable(filteredFiles);
-}
-
-function sortFiles(field) {
-  const { field: f, asc } = currentSort;
-  filteredFiles.sort((a, b) => {
-    let va, vb;
-    switch (f) {
-      case 'name': va = a.name; vb = b.name; break;
-      case 'size': va = a.size; vb = b.size; break;
-      case 'type': va = a.type; vb = b.type; break;
-      case 'date': va = a.date; vb = b.date; break;
-      case 'path': va = a.path; vb = b.path; break;
-      default: va = a.name; vb = b.name;
-    }
-    if (typeof va === 'number') return asc ? va - vb : vb - va;
-    return asc ? va.localeCompare(vb) : vb.localeCompare(va);
+function generateMockFiles() {
+  const names = [
+    '年度财务报表.xlsx', '项目方案v3.docx', '会议录音.m4a', 'UI设计稿.psd',
+    '客户数据.csv', '培训视频.mp4', '产品原型.fig', '需求文档.doc',
+    '服务器日志.log', '备份数据.zip', '演示文稿.pptx', '合同模板.pdf',
+    '测试报告.md', '数据库导出.sql', '安装程序.exe', '配置文件.json',
+    '数据看板.html', '错误日志.txt', '脚本文件.py', '图片资源.png',
+    '压缩素材.rar', '视频片段.mov', '音频素材.wav', '字体文件.ttf',
+    '开源代码.tar.gz', '部署脚本.sh', 'API文档.yaml', 'README.md',
+    '缓存文件.tmp', '缩略图_001.jpg'
+  ];
+  const sizes = [
+    256, 0.8, 12.5, 450, 5, 180, 320, 1.2,
+    0.05, 500, 45, 8, 0.3, 22, 890, 0.01,
+    0.15, 0.02, 0.4, 3.2, 1500, 67, 8.5, 0.003,
+    800, 0.1, 0.02, 0.001, 2, 0.5
+  ];
+  const today = new Date();
+  const files = names.map((name, i) => {
+    const mod = new Date(today);
+    mod.setDate(mod.getDate() - Math.floor(Math.random() * 180));
+    return {
+      name,
+      size: sizes[i],
+      modified: mod.toISOString().slice(0, 16).replace('T', ' '),
+      path: MOCK_DIR + (Math.random() > 0.7 ? '/子文件夹/' + ['备份/', '临时/', '归档/'][Math.floor(Math.random()*3)] : ''),
+    };
   });
+  // Add a few "empty folder" entries
+  files.push({ name: '[空] 旧项目备份', size: 0, modified: '2025-03-10 14:20', path: MOCK_DIR + '/旧项目备份/', empty: true });
+  files.push({ name: '[空] 测试数据', size: 0, modified: '2025-11-05 09:00', path: MOCK_DIR + '/测试数据/', empty: true });
+  return files;
 }
 
-// ==================== Search ====================
-function handleSearch(query) {
-  if (!query.trim()) { applyFilters(); return; }
-  const q = query.toLowerCase();
-  filteredFiles = allFiles.filter(f =>
-    f.name.toLowerCase().includes(q) ||
-    f.path.toLowerCase().includes(q) ||
-    f.type.toLowerCase().includes(q) ||
-    f.date.toLowerCase().includes(q)
-  );
-  sortFiles(currentSort.field);
-  renderTable(filteredFiles);
-  updateStatus();
-}
+let allFiles = [];
+let filteredFiles = [];
+let sortField = 'modified';
+let sortAsc = false;
 
-// ==================== Filters ====================
-function applyFilters() {
-  const sizeMinStr = document.getElementById('sizeMin').value;
-  const sizeMaxStr = document.getElementById('sizeMax').value;
-  const sizeMinUnit = document.getElementById('sizeMinUnit').value;
-  const sizeMaxUnit = document.getElementById('sizeMaxUnit').value;
-  const suffixInclude = document.getElementById('suffixInclude').value.toLowerCase();
-  const suffixExclude = document.getElementById('suffixExclude').value.toLowerCase();
-  const dateFilter = document.getElementById('dateFilter').value;
-  const showCode = document.getElementById('fCode').checked;
-  const showDoc = document.getElementById('fDoc').checked;
-  const showMedia = document.getElementById('fMedia').checked;
-  const showConfig = document.getElementById('fConfig').checked;
+// ===== DOM =====
+const dropZone = document.getElementById('dropZone');
+const folderInput = document.getElementById('folderInput');
+const folderPathEl = document.getElementById('folderPath');
+const btnScan = document.getElementById('btnScan');
+const btnDelete = document.getElementById('btnDelete');
+const btnDisband = document.getElementById('btnDisband');
+const btnExport = document.getElementById('btnExport');
+const chkSelectAll = document.getElementById('chkSelectAll');
+const thSelectAll = document.getElementById('thSelectAll');
+const fileBody = document.getElementById('fileBody');
+const totalsBar = document.getElementById('totalsBar');
+const toastEl = document.getElementById('toast');
+const confirmModal = document.getElementById('confirmModal');
 
-  // Update range label
-  document.getElementById('sizeRangeLabel').textContent =
-    (sizeMinStr || '0') + ' ' + sizeMinUnit + ' — ' + (sizeMaxStr || '∞') + ' ' + sizeMaxUnit;
+let selectedPath = '';
 
-  const sizeMin = sizeMinStr ? parseFloat(sizeMinStr) * (sizeMinUnit === 'GB' ? 1048576 : 1024) : 0;
-  const sizeMax = sizeMaxStr ? parseFloat(sizeMaxStr) * (sizeMaxUnit === 'GB' ? 1048576 : 1024) : Infinity;
+// ===== Folder Selection =====
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  const items = e.dataTransfer.items;
+  if (items) {
+    let count = 0;
+    for (const item of items) {
+      if (item.kind === 'file') count++;
+      if (count > 0) break;
+    }
+    if (count > 0) {
+      selectedPath = '[已拖入文件夹]';
+      folderPathEl.textContent = selectedPath;
+      folderPathEl.classList.add('show');
+      btnScan.disabled = false;
+      showToast('文件夹已就绪，点击扫描开始');
+    }
+  }
+});
+folderInput.addEventListener('change', () => {
+  if (folderInput.files.length > 0) {
+    selectedPath = folderInput.files[0].webkitRelativePath.split('/')[0];
+    folderPathEl.textContent = selectedPath + '（' + folderInput.files.length + ' 个项目）';
+    folderPathEl.classList.add('show');
+    btnScan.disabled = false;
+    showToast('文件夹已选择，点击扫描开始');
+  }
+});
 
-  // Category mapping
-  const typeMap = {
-    '.js': 'code', '.ts': 'code', '.py': 'code', '.sh': 'code', '.sql': 'code',
-    '.Dockerfile': 'code', '.map': 'code', '.font': 'code',
-    '.md': 'doc', '.pdf': 'doc', '.doc': 'doc', '.xlsx': 'doc', '.txt': 'doc',
-    '.csv': 'doc', '.pptx': 'doc', '.ppt': 'doc',
-    '.jpg': 'media', '.png': 'media', '.mp3': 'media', '.mp4': 'media',
-    '.svg': 'media', '.gif': 'media', '.webp': 'media',
-    '.json': 'config', '.yaml': 'config', '.yml': 'config', '.env': 'config',
-    '.gitignore': 'config', '.css': 'config', '.html': 'config',
-    '.zip': 'archive', '.tar': 'archive', '.tar.gz': 'archive', '.gz': 'archive',
-    '.tmp': 'code', '.bak': 'code', '.log': 'code',
-  };
+// ===== Filter Change =====
+document.querySelectorAll('[data-filter]').forEach(cb => {
+  cb.addEventListener('change', applyFilter);
+});
+document.querySelectorAll('input[type="number"], input[type="text"]').forEach(inp => {
+  inp.addEventListener('input', applyFilter);
+});
+document.querySelectorAll('[data-reverse]').forEach(cb => {
+  cb.addEventListener('change', applyFilter);
+});
 
+function applyFilter() {
+  if (!allFiles.length) return;
   filteredFiles = allFiles.filter(f => {
-    // Size filter
-    if (f.size < sizeMin || f.size > sizeMax) return false;
-
-    // Suffix include filter
-    if (suffixInclude.trim()) {
-      const incSuffixes = suffixInclude.split(',').map(s => s.trim()).filter(Boolean);
-      if (!incSuffixes.some(s => f.type.toLowerCase().includes(s))) return false;
+    // 大小 >
+    let pass = true;
+    const c1 = document.getElementById('f_sizeGt').checked;
+    if (c1) {
+      const v = parseFloat(document.getElementById('f_sizeGtVal').value) || 0;
+      pass = f.size > v * 1024 * 1024;
     }
+    if (document.querySelector('[data-reverse=f_sizeGt]').checked) pass = !pass;
+    if (!pass) return false;
 
-    // Suffix exclude filter
-    if (suffixExclude.trim()) {
-      const excSuffixes = suffixExclude.split(',').map(s => s.trim()).filter(Boolean);
-      if (excSuffixes.some(s => f.type.toLowerCase().includes(s))) return false;
+    // 大小 <
+    pass = true;
+    const c2 = document.getElementById('f_sizeLt').checked;
+    if (c2) {
+      const v = parseFloat(document.getElementById('f_sizeLtVal').value) || 0;
+      pass = f.size < v * 1024 * 1024;
     }
+    if (document.querySelector('[data-reverse=f_sizeLt]').checked) pass = !pass;
+    if (!pass) return false;
 
-    // Category filter
-    const cat = typeMap[f.type] || 'code';
-    if (!showCode && cat === 'code') return false;
-    if (!showDoc && cat === 'doc') return false;
-    if (!showMedia && cat === 'media') return false;
-    if (!showConfig && cat === 'config') return false;
-
-    // Date filter
-    if (dateFilter !== 'all' && dateFilter !== 'custom') {
-      const fileDate = new Date(f.date.split(' ')[0]);
-      const now = new Date('2026-06-01');
-      let cutoff;
-      switch (dateFilter) {
-        case 'today': cutoff = new Date(now); cutoff.setHours(0,0,0,0); break;
-        case 'week': cutoff = new Date(now); cutoff.setDate(now.getDate() - 7); break;
-        case 'month': cutoff = new Date(now); cutoff.setMonth(now.getMonth() - 1); break;
-        default: cutoff = null;
+    // 后缀 =
+    pass = true;
+    const c3 = document.getElementById('f_extEq').checked;
+    if (c3) {
+      const raw = document.getElementById('f_extEqVal').value.trim();
+      if (raw) {
+        const exts = raw.split(',').map(s => s.trim().toLowerCase());
+        const fn = f.name.toLowerCase();
+        pass = exts.some(ext => {
+          if (ext.includes('*')) {
+            const re = new RegExp('^' + ext.replace(/[.+?^${}()|[\]\\]/g,'\\$&').replace(/\*/g, '.*') + '$');
+            return re.test(fn);
+          }
+          return fn.endsWith(ext);
+        });
       }
-      if (cutoff && fileDate < cutoff) return false;
     }
+    if (document.querySelector('[data-reverse=f_extEq]').checked) pass = !pass;
+    if (!pass) return false;
+
+    // 后缀 !=
+    pass = true;
+    const c4 = document.getElementById('f_extNe').checked;
+    if (c4) {
+      const raw = document.getElementById('f_extNeVal').value.trim();
+      if (raw) {
+        const exts = raw.split(',').map(s => s.trim().toLowerCase());
+        const fn = f.name.toLowerCase();
+        pass = !exts.some(ext => fn.endsWith(ext));
+      }
+    }
+    if (document.querySelector('[data-reverse=f_extNe]').checked) pass = !pass;
+    if (!pass) return false;
+
+    // 修改日期
+    pass = true;
+    const c5 = document.getElementById('f_days').checked;
+    if (c5) {
+      const days = parseInt(document.getElementById('f_daysVal').value) || 0;
+      if (days > 0) {
+        const mod = new Date(f.modified.replace(' ', 'T'));
+        const diff = (Date.now() - mod.getTime()) / 86400000;
+        pass = diff <= days;
+      } else {
+        pass = false;
+      }
+    }
+    if (document.querySelector('[data-reverse=f_days]').checked) pass = !pass;
+    if (!pass) return false;
+
+    // 空文件夹
+    pass = true;
+    const c6 = document.getElementById('f_empty').checked;
+    if (c6) pass = f.empty === true;
+    if (document.querySelector('[data-reverse=f_empty]').checked) pass = !pass;
+    if (!pass) return false;
 
     return true;
   });
-
-  sortFiles(currentSort.field);
-  renderTable(filteredFiles);
-  updateStatus();
+  sortAndRender();
 }
 
-function resetFilters() {
-  document.getElementById('sizeMin').value = '1';
-  document.getElementById('sizeMax').value = '50';
-  document.getElementById('sizeMinUnit').value = 'MB';
-  document.getElementById('sizeMaxUnit').value = 'MB';
-  document.getElementById('suffixInclude').value = '';
-  document.getElementById('suffixExclude').value = '';
-  document.getElementById('dateFilter').value = 'all';
-  document.getElementById('fCode').checked = true;
-  document.getElementById('fDoc').checked = true;
-  document.getElementById('fMedia').checked = true;
-  document.getElementById('fConfig').checked = true;
-  document.getElementById('fArchive').checked = false;
-  document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
-  document.getElementById('globalSearch').value = '';
-  allFiles = [...MOCK_FILES];
-  filteredFiles = [...MOCK_FILES];
-  renderTable(filteredFiles);
-  updateStatus();
-  showToast('success', '筛选条件已重置');
-}
-
-function toggleChip(el, targetInput) {
-  el.classList.toggle('active');
-  const input = document.getElementById(targetInput);
-  const vals = Array.from(document.querySelectorAll(`.filter-chip`)).map(c => c.textContent);
-  const active = vals.filter(v => {
-    // Only count active chips that are visible under this container
-    return c => true;
-  });
-  // Simple approach: just rebuild from active chips
-  const parent = el.parentElement;
-  const activeChips = Array.from(parent.querySelectorAll('.filter-chip.active')).map(c => c.textContent);
-  input.value = activeChips.join(', ');
-  applyFilters();
-}
-
-// ==================== Theme ====================
-function toggleTheme() {
-  const html = document.documentElement;
-  const current = html.getAttribute('data-theme');
-  const next = current === 'dark' ? 'light' : 'dark';
-  html.setAttribute('data-theme', next);
-  document.getElementById('themeToggle').querySelector('.icon').textContent = next === 'dark' ? '🌙' : '☀️';
-  showToast('info', next === 'dark' ? '已切换到深色模式' : '已切换到浅色模式');
-}
-
-// ==================== Drag & Drop ====================
-function handleDragOver(e) {
-  e.preventDefault();
-  document.getElementById('dropzone').classList.add('dragover');
-}
-function handleDragLeave(e) {
-  document.getElementById('dropzone').classList.remove('dragover');
-}
-function handleDrop(e) {
-  e.preventDefault();
-  document.getElementById('dropzone').classList.remove('dragover');
-  showToast('success', '文件夹已添加: Downloads');
-}
-function simulateFolderSelect() {
-  showToast('info', '正在选择文件夹...');
-  const dropzone = document.getElementById('dropzone');
-  dropzone.innerHTML = `
-    <span class="icon">✅</span>
-    <p>正在扫描文件夹...</p>
-    <p class="hint">请稍候</p>
-  `;
-  setTimeout(() => {
-    dropzone.innerHTML = `
-      <span class="icon">📥</span>
-      <p>拖入文件夹到这里</p>
-      <p class="hint">或点击此处选择</p>
-    `;
-    showToast('success', '文件夹扫描完成！新增 18 个文件');
-  }, 1500);
-}
-
-// ==================== Folder Panel ====================
-function selectFolder(el, idx) {
-  document.querySelectorAll('.folder-item').forEach(f => f.classList.remove('active'));
-  el.classList.add('active');
-  currentFolder = idx;
-  showToast('info', `已切换到: ${el.querySelector('.fi-name').textContent}`);
-}
-function removeFolder(btn) {
-  const item = btn.closest('.folder-item');
-  item.style.opacity = '0';
-  item.style.transform = 'translateX(-20px)';
-  item.style.transition = 'all 0.3s';
-  setTimeout(() => {
-    item.remove();
-    const count = document.querySelectorAll('.folder-item').length;
-    document.getElementById('folderCount').textContent = count + ' 个文件夹';
-    showToast('info', '文件夹已移除');
-  }, 300);
-}
-
-// ==================== Modals ====================
-function openExportModal() {
-  document.getElementById('exportModal').classList.add('show');
-}
-function closeExportModal() {
-  document.getElementById('exportModal').classList.remove('show');
-}
-function doExport() {
-  const fmt = document.getElementById('exportFormat').value;
-  closeExportModal();
-  showToast('success', `报告已导出为 ${fmt.toUpperCase()} 格式 (${filteredFiles.length} 个文件)`);
-}
-document.getElementById('exportModal').addEventListener('click', function(e) {
-  if (e.target === this) closeExportModal();
+// ===== Scan =====
+btnScan.addEventListener('click', () => {
+  allFiles = generateMockFiles();
+  filteredFiles = allFiles.slice();
+  // Reset selections
+  fileBody.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
+  chkSelectAll.checked = false;
+  thSelectAll.checked = false;
+  sortAndRender();
+  showToast('扫描完成，共 ' + allFiles.length + ' 个项目');
 });
 
-// ==================== Toast ====================
-function showToast(type, message) {
-  const container = document.getElementById('toastContainer');
-  const icons = { success: '✅', info: 'ℹ️', warning: '⚠️' };
-  const toast = document.createElement('div');
-  toast.className = `toast ${type}`;
-  toast.innerHTML = `<span class="toast-icon">${icons[type]}</span><span>${message}</span>`;
-  container.appendChild(toast);
-  setTimeout(() => {
-    toast.classList.add('out');
-    setTimeout(() => toast.remove(), 300);
-  }, 3000);
+// ===== Sort =====
+document.querySelectorAll('thead th[data-sort]').forEach(th => {
+  th.addEventListener('click', () => {
+    const f = th.dataset.sort;
+    if (sortField === f) { sortAsc = !sortAsc; }
+    else { sortField = f; sortAsc = true; }
+    document.querySelectorAll('.sort-arrow').forEach(s => s.textContent = '');
+    th.querySelector('.sort-arrow').textContent = sortAsc ? '↑' : '↓';
+    sortAndRender();
+  });
+});
+
+function sortAndRender() {
+  const sorted = filteredFiles.slice().sort((a, b) => {
+    let va, vb;
+    switch (sortField) {
+      case 'name': va = a.name; vb = b.name; break;
+      case 'size': va = a.size; vb = b.size; break;
+      case 'type': va = getFileType(a.name); vb = getFileType(b.name); break;
+      case 'modified': va = a.modified; vb = b.modified; break;
+      case 'path': va = a.path; vb = b.path; break;
+      default: va = a.modified; vb = b.modified;
+    }
+    if (typeof va === 'number') return sortAsc ? va - vb : vb - va;
+    return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+  });
+
+  fileBody.innerHTML = '';
+  sorted.forEach(f => {
+    const tr = document.createElement('tr');
+    tr.dataset.path = f.path + f.name;
+    if (f.empty) tr.style.opacity = '0.55';
+    tr.innerHTML = `
+      <td><input type="checkbox" class="row-cb" data-path="${f.path}${f.name}" style="width:15px;height:15px;accent-color:#4a7cf7"></td>
+      <td class="file-name">${f.empty ? '📁' : '📄'} ${escHtml(f.name)}</td>
+      <td class="file-size">${f.empty ? '—' : formatSize(f.size)}</td>
+      <td class="file-type">${f.empty ? '空文件夹' : getFileType(f.name)}</td>
+      <td class="file-date">${f.modified}</td>
+      <td class="file-path" title="${escHtml(f.path)}">${f.path.replace(MOCK_DIR + '/','').replace(MOCK_DIR,'')}</td>
+    `;
+    fileBody.appendChild(tr);
+  });
+
+  // Select-all sync
+  const rows = fileBody.querySelectorAll('tr');
+  rows.forEach(tr => {
+    tr.querySelector('.row-cb').addEventListener('change', syncSelectAll);
+  });
+  syncSelectAll();
+  updateTotals();
+  updateActions();
 }
 
-// ==================== Utility ====================
-function copyPath(path) {
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(path).then(() => showToast('success', '路径已复制到剪贴板'));
-  } else {
-    showToast('info', '路径: ' + path);
+function syncSelectAll() {
+  const checked = fileBody.querySelectorAll('.row-cb:checked').length;
+  const total = fileBody.querySelectorAll('.row-cb').length;
+  chkSelectAll.checked = checked === total && total > 0;
+  thSelectAll.checked = chkSelectAll.checked;
+}
+
+function toggleSelectAll(checked) {
+  fileBody.querySelectorAll('.row-cb').forEach(cb => cb.checked = checked);
+  fileBody.querySelectorAll('tr').forEach(tr => tr.classList.toggle('selected', checked));
+  updateActions();
+}
+
+chkSelectAll.addEventListener('change', () => toggleSelectAll(chkSelectAll.checked));
+thSelectAll.addEventListener('change', () => toggleSelectAll(thSelectAll.checked));
+
+// ===== Table row hover =====
+fileBody.addEventListener('change', (e) => {
+  if (e.target.classList.contains('row-cb')) {
+    e.target.closest('tr').classList.toggle('selected', e.target.checked);
+    syncSelectAll();
+    updateActions();
   }
-}
-function showInExplorer(path) {
-  const dir = path.substring(0, path.lastIndexOf('/'));
-  showToast('info', '在资源管理器中打开: ' + dir);
+});
+
+// ===== Actions =====
+btnDelete.addEventListener('click', () => {
+  const selected = getSelected();
+  showConfirm('确认删除', `确定要删除选中的 ${selected.length} 个文件吗？此操作不可恢复。`, () => {
+    showToast('已删除 ' + selected.length + ' 个文件（模拟）');
+    selected.forEach(p => {
+      const idx = allFiles.findIndex(f => f.path + f.name === p);
+      if (idx > -1) allFiles.splice(idx, 1);
+    });
+    allFiles = allFiles.filter(f => !selected.includes(f.path + f.name));
+    applyFilter();
+    if (!allFiles.length) {
+      fileBody.innerHTML = '<tr><td colspan="6" class="empty-state">无匹配文件</td></tr>';
+    }
+  });
+});
+
+btnDisband.addEventListener('click', () => {
+  const subFiles = allFiles.filter(f => f.path.includes('子文件夹'));
+  if (!subFiles.length) { showToast('没有找到子文件夹中的文件'); return; }
+  showConfirm('解散文件夹', `将 ${subFiles.length} 个文件从子文件夹移至根目录，并删除空文件夹。`, () => {
+    subFiles.forEach(f => { f.path = MOCK_DIR + '/'; });
+    allFiles = allFiles.filter(f => !f.path.includes('子文件夹') || f.path.includes('子文件夹'));
+    applyFilter();
+    showToast('已解散文件夹，' + subFiles.length + ' 个文件已移至根目录');
+  });
+});
+
+btnExport.addEventListener('click', () => {
+  const rows = fileBody.querySelectorAll('.row-cb:checked');
+  let csv = '\uFEFF文件名,大小,类型,修改时间,路径\n';
+  rows.forEach(cb => {
+    const tr = cb.closest('tr');
+    const cells = tr.querySelectorAll('td');
+    const name = cells[1].textContent.replace(/^[\s\S]\s*/, '');
+    csv += `${name},${cells[2].textContent},${cells[3].textContent},${cells[4].textContent},${cells[5].textContent}\n`;
+  });
+  if (!rows.length && !csv.match(/\n$/)) {
+    csv = '\uFEFF文件名,大小,类型,修改时间,路径\n';
+    filteredFiles.forEach(f => {
+      csv += `${f.name},${f.empty ? '0' : f.size + 'MB'},${f.empty ? '空文件夹' : getFileType(f.name)},${f.modified},${f.path.replace(MOCK_DIR + '/','')}\n`;
+    });
+  }
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'file_list.csv'; a.click();
+  URL.revokeObjectURL(url);
+  showToast('已导出 ' + (rows.length || filteredFiles.length) + ' 条记录');
+});
+
+function updateActions() {
+  const sel = getSelected().length;
+  btnDelete.disabled = sel === 0;
+  btnDisband.disabled = sel === 0 && !allFiles.some(f => f.path.includes('子文件夹'));
+  btnExport.disabled = allFiles.length === 0;
 }
 
-// ==================== Init ====================
-function init() {
-  filteredFiles = [...allFiles];
-  renderTable(filteredFiles);
-  updateStatus();
-  // Set initial sort arrow
-  document.getElementById('sort-name').textContent = '▼';
+function getSelected() {
+  return Array.from(fileBody.querySelectorAll('.row-cb:checked')).map(cb => cb.dataset.path);
 }
 
-init();
+// ===== Helpers =====
+function formatSize(mb) {
+  if (mb >= 1024) return (mb / 1024).toFixed(1) + ' GB';
+  if (mb >= 1) return mb.toFixed(1) + ' MB';
+  return (mb * 1024).toFixed(0) + ' KB';
+}
+
+function getFileType(name) {
+  const ext = name.slice((name.lastIndexOf('.') - 1 >>> 0) + 2).toLowerCase();
+  const map = {
+    xlsx:'Excel',docx:'Word',m4a:'音频',psd:'Photoshop',csv:'CSV',mp4:'视频',
+    fig:'Figma',doc:'Word',log:'日志',zip:'压缩包',pptx:'PPT',pdf:'PDF',
+    md:'Markdown',sql:'数据库',exe:'程序',json:'JSON',html:'网页',txt:'文本',
+    py:'Python',png:'图片',rar:'压缩包',mov:'视频',wav:'音频',ttf:'字体',
+    'tar.gz':'压缩包',sh:'Shell',yaml:'YAML',tmp:'临时文件',jpg:'JPEG'
+  };
+  return map[ext] || '文件';
+}
+
+function escHtml(s) {
+  const d = document.createElement('div'); d.textContent = s; return d.innerHTML;
+}
+
+function updateTotals() {
+  const total = filteredFiles.length;
+  const sel = getSelected().length;
+  const sizeStr = filteredFiles.reduce((s, f) => s + (f.empty ? 0 : f.size), 0);
+  totalsBar.textContent = `共 ${total} 项，已选 ${sel} 项，总大小 ${formatSize(sizeStr)}`;
+}
+
+function showToast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  setTimeout(() => toastEl.classList.remove('show'), 2200);
+}
+
+function showConfirm(title, msg, onOk) {
+  document.getElementById('confirmTitle').textContent = title;
+  document.getElementById('confirmMsg').textContent = msg;
+  confirmModal.classList.add('show');
+  const ok = document.getElementById('confirmOk');
+  const cancel = document.getElementById('confirmCancel');
+  ok.onclick = () => { confirmModal.classList.remove('show'); onOk(); };
+  cancel.onclick = () => confirmModal.classList.remove('show');
+  confirmModal.addEventListener('click', (e) => { if (e.target === confirmModal) confirmModal.classList.remove('show'); }, { once: true });
+}
 </script>
 </body>
 </html>
