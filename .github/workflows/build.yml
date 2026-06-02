@@ -31,16 +31,17 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache Rust dependencies
-        uses: actions/cache@v4
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            src-tauri/target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
+          workspaces: src-tauri -> target
+
+      - name: Cache npm dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
 
       - name: Install dependencies (Linux)
         if: matrix.platform == 'ubuntu-latest'
@@ -54,16 +55,11 @@ jobs:
       - name: Install frontend deps
         run: npm install
 
-      - name: Build (Linux/macOS)
-        if: matrix.platform != 'windows-latest'
-        run: cargo tauri build --target ${{ matrix.target }}
-
-      - name: Build (Windows - 包含便携版)
-        if: matrix.platform == 'windows-latest'
+      - name: Build
         run: cargo tauri build --target ${{ matrix.target }}
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: |
@@ -76,16 +72,32 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v5
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: FilePulse-linux-x64
+          path: artifacts
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: FilePulse-macos-arm64
+          path: artifacts
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: FilePulse-windows-x64
+          path: artifacts
+
+      - name: List downloaded files
+        run: find artifacts -type f
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
-            FilePulse-linux-x64/**/*
-            FilePulse-macos-arm64/**/*
-            FilePulse-windows-x64/**/*
+            artifacts/**/*
           draft: false
           prerelease: false
         env:
