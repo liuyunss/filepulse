@@ -31,8 +31,10 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "nsis": {
-      "installMode": "both"
+    "windows": {
+      "nsis": {
+        "installMode": "both"
+      }
     }
   }
 }
