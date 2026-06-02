@@ -59,19 +59,6 @@ jobs:
       - name: Build
         run: cargo tauri build --target ${{ matrix.target }}
 
-      - name: Find bundle files
-        if: always()
-        shell: bash
-        run: |
-          echo "=== Looking for bundle files ==="
-          find src-tauri/target -name "*.deb" -o -name "*.AppImage" -o -name "*.dmg" -o -name "*.app" -o -name "*.exe" -o -name "*.msi" 2>/dev/null | head -20
-          echo "=== Bundle directory (target path) ==="
-          ls -la src-tauri/target/${{ matrix.target }}/release/bundle/ 2>/dev/null || echo "No bundle dir"
-          echo "=== Bundle directory (release path) ==="
-          ls -la src-tauri/target/release/bundle/ 2>/dev/null || echo "No bundle dir"
-          echo "=== All .exe files ==="
-          find src-tauri/target -name "*.exe" 2>/dev/null | head -10
-
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v5
@@ -94,9 +81,6 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
-
-      - name: List downloaded files
-        run: find artifacts -type f | head -30
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
