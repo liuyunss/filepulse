@@ -72,11 +72,31 @@
         <button id="btn-scan">扫描</button>
         <button id="btn-preview">预览</button>
         <button id="btn-delete">删除</button>
+        <button id="btn-empty-cleanup">空文件清理</button>
         <button id="btn-advanced">高级 ▼</button>
     </div>
     
     <!-- 高级面板 -->
     <div id="advanced-panel" style="display:none">
+        <div id="empty-cleanup-section" style="display:none; padding: 15px; background: #fff8f0; border: 1px solid #ffcc80; border-radius: 5px; margin: 10px 0;">
+            <div style="margin-bottom: 10px;">
+                <strong>空文件清理</strong> - 找出0KB文件并清理
+            </div>
+            <div style="margin-bottom: 10px;">
+                <label>指定后缀（逗号分隔）：</label>
+                <input type="text" id="empty-ext-value" placeholder=".txt,.log,.tmp" value=".txt,.log,.tmp">
+            </div>
+            <div style="margin-bottom: 10px;">
+                <button id="btn-scan-empty">扫描空文件</button>
+                <button id="btn-delete-empty" disabled>删除选中</button>
+                <button id="btn-close-empty-cleanup">关闭</button>
+            </div>
+            <div id="empty-cleanup-preview" style="display:none;">
+                <div style="margin-bottom: 5px; color: #666;" id="empty-cleanup-count"></div>
+                <div id="empty-cleanup-list" style="max-height: 300px; overflow-y: auto;"></div>
+            </div>
+        </div>
+        
         <div id="dissolve-section">
             解散文件夹 - 保留 
             <select id="keep-levels">

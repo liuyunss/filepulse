@@ -127,6 +127,100 @@ function deleteFiles() {
 }
 
 // 解散文件夹预览
+// 空文件清理
+let emptyFiles = [];
+
+function scanEmptyFiles() {
+    const exts = document.getElementById('empty-ext-value').value
+        .split(',')
+        .map(e => e.trim().toLowerCase())
+        .filter(e => e);
+    
+    if (exts.length === 0) {
+        alert('请输入至少一个文件后缀');
+        return;
+    }
+    
+    // 筛选空文件（size === 0）
+    emptyFiles = currentFiles.filter(f => {
+        const ext = '.' + f.type.toLowerCase();
+        return f.size === 0 && exts.some(e => e === ext || e === '.' + f.type.toLowerCase());
+    });
+    
+    // 按文件夹分组
+    const folderMap = {};
+    emptyFiles.forEach(f => {
+        const parts = f.path.split('/');
+        // 取文件所在文件夹路径（去掉文件名）
+        const folderPath = parts.slice(0, -1).join('/') || '(根目录)';
+        if (!folderMap[folderPath]) {
+            folderMap[folderPath] = [];
+        }
+        folderMap[folderPath].push(f);
+    });
+    
+    // 渲染预览
+    const preview = document.getElementById('empty-cleanup-preview');
+    const countDiv = document.getElementById('empty-cleanup-count');
+    const listDiv = document.getElementById('empty-cleanup-list');
+    
+    if (emptyFiles.length === 0) {
+        countDiv.textContent = `未找到匹配的空文件`;
+        listDiv.innerHTML = '';
+        preview.style.display = 'block';
+        document.getElementById('btn-delete-empty').disabled = true;
+        return;
+    }
+    
+    countDiv.textContent = `找到 ${emptyFiles.length} 个空文件，分布在 ${Object.keys(folderMap).length} 个文件夹中：`;
+    
+    let html = '';
+    Object.keys(folderMap).sort().forEach(folder => {
+        const files = folderMap[folder];
+        html += `
+            <div style="margin: 8px 0; padding: 8px; background: #fff; border: 1px solid #eee; border-radius: 4px;">
+                <div style="font-weight: bold; color: #555;">📁 ${folder}</div>
+                <div style="margin-left: 20px; margin-top: 5px;">
+                    ${files.map(f => `
+                        <label style="display: block; color: #999;">
+                            <input type="checkbox" class="empty-file-checkbox" data-path="${f.path}" checked>
+                            📄 ${f.name} (${f.type}, 0KB)
+                        </label>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    });
+    
+    listDiv.innerHTML = html;
+    preview.style.display = 'block';
+    document.getElementById('btn-delete-empty').disabled = false;
+}
+
+function deleteEmptyFiles() {
+    const checked = Array.from(document.querySelectorAll('.empty-file-checkbox:checked'))
+        .map(cb => cb.dataset.path);
+    
+    if (checked.length === 0) {
+        alert('请先勾选要删除的文件');
+        return;
+    }
+    
+    if (!confirm(`确定删除以下 ${checked.length} 个空文件？\n\n${checked.join('\n')}`)) {
+        return;
+    }
+    
+    // 模拟删除
+    currentFiles = currentFiles.filter(f => !checked.includes(f.path));
+    renderFileList(currentFiles);
+    
+    // 重新扫描
+    scanEmptyFiles();
+    
+    alert(`已删除 ${checked.length} 个空文件`);
+}
+
+// 解散文件夹预览
 function previewDissolve() {
     const keepLevels = parseInt(document.getElementById('keep-levels').value);
     const preview = document.getElementById('dissolve-preview');
@@ -286,6 +380,21 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-execute-dissolve').addEventListener('click', () => {
         alert('执行解散（模拟）');
     });
+    
+    // 空文件清理
+    document.getElementById('btn-empty-cleanup').addEventListener('click', () => {
+        const panel = document.getElementById('empty-cleanup-section');
+        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        const advPanel = document.getElementById('advanced-panel');
+        advPanel.style.display = 'block';
+    });
+    
+    document.getElementById('btn-close-empty-cleanup').addEventListener('click', () => {
+        document.getElementById('empty-cleanup-section').style.display = 'none';
+    });
+    
+    document.getElementById('btn-scan-empty').addEventListener('click', scanEmptyFiles);
+    document.getElementById('btn-delete-empty').addEventListener('click', deleteEmptyFiles);
     
     // 全选
     document.getElementById('select-all').addEventListener('change', e => {
