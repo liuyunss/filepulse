@@ -87,10 +87,20 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      - name: List downloaded files
+        run: find artifacts -type f -exec ls -lh {} \;
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*
+          files: |
+            artifacts/**/*.deb
+            artifacts/**/*.AppImage
+            artifacts/**/*.dmg
+            artifacts/**/*.exe
+            artifacts/**/*.msi
+            artifacts/**/*.tar.gz
+            artifacts/**/*.zip
           draft: false
           prerelease: false
         env:
