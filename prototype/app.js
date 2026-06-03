@@ -97,6 +97,22 @@ function filterFiles() {
             if (!match) return false;
         }
         
+        // 空文件夹筛选（文件所在文件夹的所有文件均为0字节）
+        if (document.getElementById('empty-filter').checked) {
+            const folderPath = f.path.split('/').slice(0, -1).join('/');
+            const siblingFiles = currentFiles.filter(sf => {
+                const sfFolder = sf.path.split('/').slice(0, -1).join('/');
+                return sfFolder === folderPath;
+            });
+            const match = siblingFiles.length > 0 && siblingFiles.every(sf => sf.size === 0);
+            
+            if (document.getElementById('empty-negate').checked) {
+                if (match) return false;
+            } else {
+                if (!match) return false;
+            }
+        }
+        
         return true;
     });
 }
