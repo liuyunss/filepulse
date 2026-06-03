@@ -299,7 +299,12 @@ function previewDissolve() {
 
 // 规则保存
 function getRules() {
-    return JSON.parse(localStorage.getItem('filepulse_rules') || '[]');
+    try {
+        return JSON.parse(localStorage.getItem('filepulse_rules') || '[]');
+    } catch (e) {
+        console.warn('规则数据解析失败，使用默认值', e);
+        return [];
+    }
 }
 
 function saveRule(name) {
