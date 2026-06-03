@@ -5,6 +5,14 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
+// 文件扩展名提取（正确处理隐藏文件和无扩展名文件）
+function getExtension(filename) {
+    const parts = filename.split('.');
+    if (parts.length <= 1) return '';             // 无扩展名：Makefile → ''
+    if (parts[0] === '' && parts.length === 2) return '';  // 隐藏文件无扩展名：.gitignore → ''
+    return parts.pop();                           // .env.local → 'local', file.txt → 'txt'
+}
+
 // 全局状态
 let currentFiles = [];
 let selectedFolder = null;
@@ -14,7 +22,7 @@ function scanFolder(files) {
     currentFiles = Array.from(files).map(f => ({
         name: f.name,
         size: f.size,
-        type: f.name.split('.').pop(),
+        type: getExtension(f.name),
         lastModified: new Date(f.lastModified),
         path: f.webkitRelativePath
     }));
