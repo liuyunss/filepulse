@@ -35,7 +35,7 @@ function renderFileList(files) {
     tbody.innerHTML = files.map(f => `
         <tr data-path="${escapeHtml(f.path)}">
             <td><input type="checkbox" class="file-checkbox" data-path="${escapeHtml(f.path)}"></td>
-            <td><a href="#" onclick="openFile('${escapeHtml(f.path)}')">${escapeHtml(f.name)}</a></td>
+            <td><a href="#" data-path="${escapeHtml(f.path)}">${escapeHtml(f.name)}</a></td>
             <td>${formatSize(f.size)}</td>
             <td>${escapeHtml(f.type)}</td>
             <td>${f.lastModified.toLocaleDateString()}</td>
@@ -449,6 +449,15 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.file-checkbox').forEach(cb => {
             cb.checked = e.target.checked;
         });
+    });
+    
+    // 文件链接点击（事件委托，替代行内 onclick）
+    document.getElementById('file-tbody').addEventListener('click', e => {
+        const link = e.target.closest('a[data-path]');
+        if (link) {
+            e.preventDefault();
+            openFile(link.dataset.path);
+        }
     });
     
     // 筛选条件变化时实时更新（使用 CSS display 控制，保留状态和滚动位置）
