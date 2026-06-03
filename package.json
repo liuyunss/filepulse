@@ -4,6 +4,8 @@
   "private": true,
   "description": "FilePulse - 文件分析筛选工具",
   "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
     "tauri": "tauri"
   }
 }
