@@ -445,10 +445,13 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-scan-empty').addEventListener('click', scanEmptyFiles);
     document.getElementById('btn-delete-empty').addEventListener('click', deleteEmptyFiles);
     
-    // 全选
+    // 全选（仅选中可见行，排除被筛选隐藏的行）
     document.getElementById('select-all').addEventListener('change', e => {
         document.querySelectorAll('.file-checkbox').forEach(cb => {
-            cb.checked = e.target.checked;
+            const row = cb.closest('tr');
+            if (row && row.style.display !== 'none') {
+                cb.checked = e.target.checked;
+            }
         });
     });
     
