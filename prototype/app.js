@@ -21,11 +21,11 @@ function scanFolder(files) {
     renderFileList(currentFiles);
 }
 
-// 渲染文件列表
+// 渲染文件列表（始终渲染全部文件，显示隐藏通过 applyFilters 控制）
 function renderFileList(files) {
     const tbody = document.getElementById('file-tbody');
     tbody.innerHTML = files.map(f => `
-        <tr>
+        <tr data-path="${escapeHtml(f.path)}">
             <td><input type="checkbox" class="file-checkbox" data-path="${escapeHtml(f.path)}"></td>
             <td><a href="#" onclick="openFile('${escapeHtml(f.path)}')">${escapeHtml(f.name)}</a></td>
             <td>${formatSize(f.size)}</td>
@@ -34,6 +34,17 @@ function renderFileList(files) {
             <td>${escapeHtml(f.path)}</td>
         </tr>
     `).join('');
+}
+
+// 通过 CSS display 控制行的显示/隐藏（保留复选框状态和滚动位置）
+function applyFilters() {
+    if (currentFiles.length === 0) return;
+    const filtered = filterFiles();
+    const filteredPaths = new Set(filtered.map(f => f.path));
+    document.querySelectorAll('#file-tbody tr').forEach(row => {
+        const path = row.dataset.path;
+        row.style.display = filteredPaths.has(path) ? '' : 'none';
+    });
 }
 
 // 打开文件
@@ -120,10 +131,11 @@ function filterFiles() {
 // 预览（高亮）
 function previewFiles() {
     const filtered = filterFiles();
+    const filteredPaths = new Set(filtered.map(f => f.path));
     const rows = document.querySelectorAll('#file-tbody tr');
     rows.forEach(row => {
-        const path = row.querySelector('.file-checkbox').dataset.path;
-        if (filtered.some(f => f.path === path)) {
+        const path = row.dataset.path;
+        if (filteredPaths.has(path)) {
             row.style.backgroundColor = '#ffcccc';
         } else {
             row.style.backgroundColor = '';
@@ -426,12 +438,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
     
-    // 筛选条件变化时实时更新
+    // 筛选条件变化时实时更新（使用 CSS display 控制，保留状态和滚动位置）
     document.querySelectorAll('#filters input, #filters select').forEach(el => {
         el.addEventListener('change', () => {
             if (currentFiles.length > 0) {
-                const filtered = filterFiles();
-                renderFileList(filtered);
+                applyFilters();
             }
         });
     });
