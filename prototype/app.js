@@ -1,3 +1,10 @@
+// HTML 转义工具函数（防 XSS）
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
 // 全局状态
 let currentFiles = [];
 let selectedFolder = null;
@@ -19,12 +26,12 @@ function renderFileList(files) {
     const tbody = document.getElementById('file-tbody');
     tbody.innerHTML = files.map(f => `
         <tr>
-            <td><input type="checkbox" class="file-checkbox" data-path="${f.path}"></td>
-            <td><a href="#" onclick="openFile('${f.path}')">${f.name}</a></td>
+            <td><input type="checkbox" class="file-checkbox" data-path="${escapeHtml(f.path)}"></td>
+            <td><a href="#" onclick="openFile('${escapeHtml(f.path)}')">${escapeHtml(f.name)}</a></td>
             <td>${formatSize(f.size)}</td>
-            <td>${f.type}</td>
+            <td>${escapeHtml(f.type)}</td>
             <td>${f.lastModified.toLocaleDateString()}</td>
-            <td>${f.path}</td>
+            <td>${escapeHtml(f.path)}</td>
         </tr>
     `).join('');
 }
@@ -179,12 +186,12 @@ function scanEmptyFiles() {
         const files = folderMap[folder];
         html += `
             <div style="margin: 8px 0; padding: 8px; background: #fff; border: 1px solid #eee; border-radius: 4px;">
-                <div style="font-weight: bold; color: #555;">📁 ${folder}</div>
+                <div style="font-weight: bold; color: #555;">📁 ${escapeHtml(folder)}</div>
                 <div style="margin-left: 20px; margin-top: 5px;">
                     ${files.map(f => `
                         <label style="display: block; color: #999;">
-                            <input type="checkbox" class="empty-file-checkbox" data-path="${f.path}" checked>
-                            📄 ${f.name} (${f.type}, 0KB)
+                            <input type="checkbox" class="empty-file-checkbox" data-path="${escapeHtml(f.path)}" checked>
+                            📄 ${escapeHtml(f.name)} (${escapeHtml(f.type)}, 0KB)
                         </label>
                     `).join('')}
                 </div>
@@ -287,7 +294,7 @@ function renderRules() {
     list.innerHTML = rules.map((r, i) => `
         <label>
             <input type="checkbox" class="rule-checkbox" data-index="${i}">
-            ${r.name}
+            ${escapeHtml(r.name)}
         </label>
     `).join('');
 }
