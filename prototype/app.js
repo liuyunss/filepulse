@@ -76,6 +76,7 @@ function filterFiles() {
         if (document.getElementById('size-filter').checked) {
             const op = document.getElementById('size-op').value;
             const value = parseFloat(document.getElementById('size-value').value);
+            if (isNaN(value)) return true; // 无效输入跳过大小筛选
             const unit = document.getElementById('size-unit').value;
             let sizeMB = f.size / 1048576;
             if (unit === 'KB') sizeMB = f.size / 1024;
@@ -96,7 +97,8 @@ function filterFiles() {
             const fileExt = '.' + f.type.toLowerCase();
             let match = exts.some(ext => {
                 if (ext.includes('*')) {
-                    const regex = new RegExp('^' + ext.replace(/\*/g, '.*') + '$');
+                    const regexPattern = ext.split('*').map(part => part.replace(/[.+?^${}()|[\]\\]/g, '\\$1')).join('.*');
+                    const regex = new RegExp('^' + regexPattern + '$');
                     return regex.test(fileExt);
                 }
                 return fileExt === ext;
@@ -266,7 +268,7 @@ function deleteEmptyFiles() {
 
 // 解散文件夹预览
 function previewDissolve() {
-    const keepLevels = parseInt(document.getElementById('keep-levels').value);
+    const keepLevels = parseInt(document.getElementById('keep-levels').value) || 1;
     const preview = document.getElementById('dissolve-preview');
     
     // 模拟解散预览
@@ -418,6 +420,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         const index = parseInt(checked.dataset.index);
+        if (isNaN(index)) return;
         if (confirm(`确定删除规则 "${document.querySelector('.rule-checkbox:checked').parentElement.textContent.trim()}"？`)) {
             const rules = getRules();
             rules.splice(index, 1);

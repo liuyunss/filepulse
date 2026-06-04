@@ -127,6 +127,51 @@ button {
     margin-left: auto;
 }
 
+#btn-empty-cleanup {
+    background: #17a2b8;
+    color: white;
+}
+
+#btn-close-empty-cleanup {
+    background: #6c757d;
+    color: white;
+}
+
+#btn-scan-empty {
+    background: #007bff;
+    color: white;
+}
+
+#btn-delete-empty {
+    background: #dc3545;
+    color: white;
+}
+
+#btn-preview-dissolve {
+    background: #ffc107;
+    color: #333;
+}
+
+#btn-execute-dissolve {
+    background: #dc3545;
+    color: white;
+}
+
+#btn-save-rule {
+    background: #28a745;
+    color: white;
+}
+
+#btn-execute-rule {
+    background: #007bff;
+    color: white;
+}
+
+#btn-delete-rule {
+    background: #dc3545;
+    color: white;
+}
+
 button:hover {
     opacity: 0.9;
 }
