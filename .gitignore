@@ -16,6 +16,7 @@ out/
 
 # ── Rust / Tauri ────────────────────────────────────────────────────
 src-tauri/target/
+src-tauri/gen/
 src-tauri/WixTools/
 src-tauri/Frameworks/
 *.rs.bk
