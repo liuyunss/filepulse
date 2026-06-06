@@ -75,14 +75,11 @@ jobs:
         if: matrix.platform == 'macos'
         run: flutter build macos --release --no-codesign
 
-      - name: Create macOS DMG
+      - name: Package macOS (zip)
         if: matrix.platform == 'macos'
         run: |
-          mkdir -p build/macos/Build/Products/Release
-          hdiutil create -volname "FilePulse" \
-            -srcfolder "build/macos/Build/Products/Release/FilePulse.app" \
-            -ov -format UDZO \
-            "build/macos/Build/Products/Release/FilePulse-macos.dmg"
+          cd build/macos/Build/Products/Release
+          zip -r ../../../FilePulse-macos.zip FilePulse.app
 
       - name: Upload macOS artifacts
         if: matrix.platform == 'macos'
@@ -91,7 +88,7 @@ jobs:
           name: artifacts-macos
           path: |
             build/macos/Build/Products/Release/FilePulse.app/
-            build/macos/Build/Products/Release/FilePulse-macos.dmg
+            build/macos/FilePulse-macos.zip
 
       # ─── Windows Build ───────────────────────────────────
       - name: Build Windows
@@ -153,9 +150,9 @@ jobs:
               "FilePulse_${{ env.version }}_linux_x64.tar.gz"
           fi
           # macOS
-          if [ -f artifacts/macos/FilePulse-macos.dmg ]; then
-            mv artifacts/macos/FilePulse-macos.dmg \
-              "FilePulse_${{ env.version }}_macos.dmg"
+          if [ -f artifacts/macos/FilePulse-macos.zip ]; then
+            mv artifacts/macos/FilePulse-macos.zip \
+              "FilePulse_${{ env.version }}_macos.zip"
           fi
           # Windows
           if [ -f artifacts/windows/FilePulse-windows-x64.zip ]; then
@@ -175,13 +172,13 @@ jobs:
 
             ### 下载
             - **Windows**: `FilePulse_${{ env.version }}_windows_x64.zip` (解压后运行)
-            - **macOS**: `FilePulse_${{ env.version }}_macos.dmg`
+            - **macOS**: `FilePulse_${{ env.version }}_macos.zip` (解压后运行 `FilePulse.app`)
             - **Linux**: `FilePulse_${{ env.version }}_linux_x64.tar.gz` (解压后运行)
           draft: false
           prerelease: false
           files: |
             FilePulse_${{ env.version }}_linux_x64.tar.gz
-            FilePulse_${{ env.version }}_macos.dmg
+            FilePulse_${{ env.version }}_macos.zip
             FilePulse_${{ env.version }}_windows_x64.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
