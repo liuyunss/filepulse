@@ -59,6 +59,22 @@ class FileServer {
     final path = data['path'] as String;
     final threads = data['threads'] as int? ?? Platform.numberOfProcessors;
 
+    // 路径安全验证：拒绝系统敏感路径
+    final resolved = p.normalize(File(path).absolute.path);
+    final blockedPrefixes = [
+      '/etc', '/bin', '/sbin', '/usr', '/sys', '/proc', '/dev', '/boot', '/lib',
+      'C:\\Windows', 'C:\\Program Files', 'C:\\Program Files (x86)',
+      'C:\\Users\\Default', 'C:\\ProgramData',
+    ];
+    for (final prefix in blockedPrefixes) {
+      if (resolved.toLowerCase().startsWith(prefix.toLowerCase())) {
+        request.response.statusCode = 403;
+        request.response.write(jsonEncode({'error': '不允许扫描系统目录: $path'}));
+        await request.response.close();
+        return;
+      }
+    }
+
     _scannedPath = path;
     final directory = Directory(path);
     if (!await directory.exists()) {
