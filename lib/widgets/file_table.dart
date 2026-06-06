@@ -48,7 +48,7 @@ class _FileTableState extends State<FileTable> {
         final files = List<FileItem>.from(service.files);
         // 空结果提示
         if (files.isEmpty && service.currentPath.isNotEmpty && !service.isLoading) {
-          return Center(
+          return const Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -56,7 +56,7 @@ class _FileTableState extends State<FileTable> {
                 SizedBox(height: 16),
                 Text('没有匹配的文件', style: TextStyle(color: Colors.grey, fontSize: 16)),
                 SizedBox(height: 8),
-                Text('请调整筛选条件', style: TextStyle(color: Colors.grey.shade400, fontSize: 13)),
+                Text('请调整筛选条件', style: TextStyle(color: Colors.grey, fontSize: 13)),
               ],
             ),
           );
