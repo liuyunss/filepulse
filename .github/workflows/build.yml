@@ -58,17 +58,16 @@ jobs:
       - name: Package Linux (tar.gz)
         if: matrix.platform == 'linux'
         run: |
+          mkdir -p release
           cd build/linux/x64/release/bundle
-          tar -czf ../../../FilePulse-linux-x64.tar.gz .
+          tar -czf ../../../../release/FilePulse-linux-x64.tar.gz .
 
       - name: Upload Linux artifacts
         if: matrix.platform == 'linux'
         uses: actions/upload-artifact@v4
         with:
           name: artifacts-linux
-          path: |
-            build/linux/x64/release/bundle/
-            build/linux/x64/release/FilePulse-linux-x64.tar.gz
+          path: release/
 
       # ─── macOS Build ─────────────────────────────────────
       - name: Build macOS
@@ -78,17 +77,16 @@ jobs:
       - name: Package macOS (zip)
         if: matrix.platform == 'macos'
         run: |
+          mkdir -p release
           cd build/macos/Build/Products/Release
-          zip -r ../../../FilePulse-macos.zip FilePulse.app
+          zip -r ../../../../release/FilePulse-macos.zip FilePulse.app
 
       - name: Upload macOS artifacts
         if: matrix.platform == 'macos'
         uses: actions/upload-artifact@v4
         with:
           name: artifacts-macos
-          path: |
-            build/macos/Build/Products/Release/FilePulse.app/
-            build/macos/FilePulse-macos.zip
+          path: release/
 
       # ─── Windows Build ───────────────────────────────────
       - name: Build Windows
@@ -99,18 +97,16 @@ jobs:
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path build\windows\x64\release
+          New-Item -ItemType Directory -Force -Path release
           Compress-Archive -Path "build\windows\x64\runner\Release\*" `
-            -DestinationPath "build\windows\x64\release\FilePulse-windows-x64.zip"
+            -DestinationPath "release\FilePulse-windows-x64.zip"
 
       - name: Upload Windows artifacts
         if: matrix.platform == 'windows'
         uses: actions/upload-artifact@v4
         with:
           name: artifacts-windows
-          path: |
-            build/windows/x64/runner/Release/
-            build/windows/x64/release/FilePulse-windows-x64.zip
+          path: release/
 
   release:
     needs: build
@@ -145,20 +141,14 @@ jobs:
       - name: Rename artifacts
         run: |
           # Linux
-          if [ -f artifacts/linux/FilePulse-linux-x64.tar.gz ]; then
-            mv artifacts/linux/FilePulse-linux-x64.tar.gz \
-              "FilePulse_${{ env.version }}_linux_x64.tar.gz"
-          fi
+          f=$(find artifacts/linux -name "*.tar.gz" | head -1)
+          [ -n "$f" ] && mv "$f" "FilePulse_${{ env.version }}_linux_x64.tar.gz"
           # macOS
-          if [ -f artifacts/macos/FilePulse-macos.zip ]; then
-            mv artifacts/macos/FilePulse-macos.zip \
-              "FilePulse_${{ env.version }}_macos.zip"
-          fi
+          f=$(find artifacts/macos -name "*.zip" | head -1)
+          [ -n "$f" ] && mv "$f" "FilePulse_${{ env.version }}_macos.zip"
           # Windows
-          if [ -f artifacts/windows/FilePulse-windows-x64.zip ]; then
-            mv artifacts/windows/FilePulse-windows-x64.zip \
-              "FilePulse_${{ env.version }}_windows_x64.zip"
-          fi
+          f=$(find artifacts/windows -name "*.zip" | head -1)
+          [ -n "$f" ] && mv "$f" "FilePulse_${{ env.version }}_windows_x64.zip"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
