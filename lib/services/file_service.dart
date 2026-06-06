@@ -40,7 +40,7 @@ class FileService extends ChangeNotifier {
   bool _emptyNegate = false;
 
   // 高级功能
-  int _threadCount = kIsWeb ? 4 : 4;
+  int _threadCount = 4;
   List<FilterRule> _savedRules = [];
   bool _showAdvancedPanel = false;
   bool _showDupPanel = false;
