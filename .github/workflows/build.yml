@@ -43,6 +43,9 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Test
+        run: flutter test
+
       - name: Analyze
         run: flutter analyze --no-pub
 
@@ -79,7 +82,7 @@ jobs:
           hdiutil create -volname "FilePulse" \
             -srcfolder "FilePulse.app" \
             -ov -format UDZO \
-            ../../../FilePulse-macos-arm64.dmg
+            ../../../FilePulse-macos.dmg
 
       - name: Upload macOS artifacts
         if: matrix.platform == 'macos'
@@ -88,7 +91,7 @@ jobs:
           name: artifacts-macos
           path: |
             build/macos/Build/Products/Release/FilePulse.app/
-            build/macos/Build/Products/Release/FilePulse-macos-arm64.dmg
+            build/macos/Build/Products/Release/FilePulse-macos.dmg
 
       # ─── Windows Build ───────────────────────────────────
       - name: Build Windows
@@ -149,9 +152,9 @@ jobs:
               "FilePulse_${{ env.version }}_linux_x64.tar.gz"
           fi
           # macOS
-          if [ -f artifacts/macos/FilePulse-macos-arm64.dmg ]; then
-            mv artifacts/macos/FilePulse-macos-arm64.dmg \
-              "FilePulse_${{ env.version }}_macos_arm64.dmg"
+          if [ -f artifacts/macos/FilePulse-macos.dmg ]; then
+            mv artifacts/macos/FilePulse-macos.dmg \
+              "FilePulse_${{ env.version }}_macos.dmg"
           fi
           # Windows
           if [ -f artifacts/windows/FilePulse-windows-x64.zip ]; then
@@ -171,13 +174,13 @@ jobs:
 
             ### 下载
             - **Windows**: `FilePulse_${{ env.version }}_windows_x64.zip` (解压后运行)
-            - **macOS**: `FilePulse_${{ env.version }}_macos_arm64.dmg`
+            - **macOS**: `FilePulse_${{ env.version }}_macos.dmg`
             - **Linux**: `FilePulse_${{ env.version }}_linux_x64.tar.gz` (解压后运行)
           draft: false
           prerelease: false
           files: |
             FilePulse_${{ env.version }}_linux_x64.tar.gz
-            FilePulse_${{ env.version }}_macos_arm64.dmg
+            FilePulse_${{ env.version }}_macos.dmg
             FilePulse_${{ env.version }}_windows_x64.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
