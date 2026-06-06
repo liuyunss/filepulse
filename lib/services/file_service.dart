@@ -416,8 +416,9 @@ class FileService extends ChangeNotifier {
   }
 
   // ─── 规则管理 ────────────────────────────────────────────
-  FilterRule getCurrentRuleState() {
+  FilterRule getCurrentRuleState({String name = ''}) {
     return FilterRule(
+      name: name,
       nameFilterEnabled: _nameFilterEnabled,
       nameOperator: _nameOperator,
       nameValue: _nameValue,
@@ -461,8 +462,7 @@ class FileService extends ChangeNotifier {
   }
 
   Future<void> saveRule(String name) async {
-    final rule = getCurrentRuleState();
-    rule.name = name;
+    final rule = getCurrentRuleState(name: name);
     _savedRules.add(rule);
     await _persistRules();
     notifyListeners();

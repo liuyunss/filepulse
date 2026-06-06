@@ -1,34 +1,34 @@
 class FilterRule {
-  String name;
+  final String name;
 
   // 名称筛选
-  bool nameFilterEnabled;
-  String nameOperator; // contains, prefix, suffix
-  String nameValue;
-  bool nameNegate;
+  final bool nameFilterEnabled;
+  final String nameOperator; // contains, prefix, suffix
+  final String nameValue;
+  final bool nameNegate;
 
   // 大小筛选
-  bool sizeFilterEnabled;
-  String sizeOperator; // gt, lt, eq
-  double sizeValue;
-  String sizeUnit; // KB, MB, GB
-  bool sizeNegate;
+  final bool sizeFilterEnabled;
+  final String sizeOperator; // gt, lt, eq
+  final double sizeValue;
+  final String sizeUnit; // KB, MB, GB
+  final bool sizeNegate;
 
   // 后缀筛选
-  bool extFilterEnabled;
-  String extValue;
-  bool extNegate;
+  final bool extFilterEnabled;
+  final String extValue;
+  final bool extNegate;
 
   // 日期筛选
-  bool dateFilterEnabled;
-  int dateValue;
-  bool dateNegate;
+  final bool dateFilterEnabled;
+  final int dateValue;
+  final bool dateNegate;
 
   // 空文件夹筛选
-  bool emptyFilterEnabled;
-  bool emptyNegate;
+  final bool emptyFilterEnabled;
+  final bool emptyNegate;
 
-  FilterRule({
+  const FilterRule({
     this.name = '',
     this.nameFilterEnabled = false,
     this.nameOperator = 'contains',
