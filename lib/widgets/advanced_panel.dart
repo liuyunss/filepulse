@@ -409,39 +409,69 @@ class _AdvancedPanelState extends State<AdvancedPanel> {
   }
 
   void _saveRuleDialog(BuildContext context, FileService service) {
-    final controller = TextEditingController();
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('保存规则'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(
-            hintText: '请输入规则名称',
-            border: OutlineInputBorder(),
-          ),
-          autofocus: true,
+      builder: (ctx) => _SaveRuleDialogWidget(service: service, parentContext: context),
+    );
+  }
+}
+
+class _SaveRuleDialogWidget extends StatefulWidget {
+  final FileService service;
+  final BuildContext parentContext;
+
+  const _SaveRuleDialogWidget({required this.service, required this.parentContext});
+
+  @override
+  State<_SaveRuleDialogWidget> createState() => _SaveRuleDialogWidgetState();
+}
+
+class _SaveRuleDialogWidgetState extends State<_SaveRuleDialogWidget> {
+  late TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('保存规则'),
+      content: TextField(
+        controller: _controller,
+        decoration: const InputDecoration(
+          hintText: '请输入规则名称',
+          border: OutlineInputBorder(),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final name = controller.text.trim();
-              if (name.isNotEmpty) {
-                service.saveRule(name);
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('规则 "$name" 已保存')),
-                );
-              }
-            },
-            child: const Text('保存'),
-          ),
-        ],
+        autofocus: true,
       ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final name = _controller.text.trim();
+            if (name.isNotEmpty) {
+              widget.service.saveRule(name);
+              Navigator.pop(context);
+              ScaffoldMessenger.of(widget.parentContext).showSnackBar(
+                SnackBar(content: Text('规则 "$name" 已保存')),
+              );
+            }
+          },
+          child: const Text('保存'),
+        ),
+      ],
     );
   }
 }
