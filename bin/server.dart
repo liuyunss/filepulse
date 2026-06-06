@@ -46,6 +46,7 @@ class FileServer {
         await _serveStaticFiles(request);
       }
     } catch (e) {
+      request.response.headers.contentType = ContentType.json;
       request.response.statusCode = 500;
       request.response
           .write(jsonEncode({'error': e.toString()}));
@@ -68,6 +69,7 @@ class FileServer {
     ];
     for (final prefix in blockedPrefixes) {
       if (resolved.toLowerCase().startsWith(prefix.toLowerCase())) {
+        request.response.headers.contentType = ContentType.json;
         request.response.statusCode = 403;
         request.response.write(jsonEncode({'error': '不允许扫描系统目录: $path'}));
         await request.response.close();
@@ -78,6 +80,7 @@ class FileServer {
     _scannedPath = path;
     final directory = Directory(path);
     if (!await directory.exists()) {
+      request.response.headers.contentType = ContentType.json;
       request.response.statusCode = 404;
       request.response
           .write(jsonEncode({'error': '文件夹不存在'}));
@@ -154,6 +157,7 @@ class FileServer {
     // 路径安全验证：确保路径在已扫描目录内
     for (final path in paths) {
       if (!_isPathAllowed(path)) {
+        request.response.headers.contentType = ContentType.json;
         request.response.statusCode = 403;
         request.response.write(jsonEncode({'error': '不允许操作该路径: $path'}));
         await request.response.close();
@@ -193,6 +197,7 @@ class FileServer {
 
     // 路径安全验证
     if (!_isPathAllowed(path)) {
+      request.response.headers.contentType = ContentType.json;
       request.response.statusCode = 403;
       request.response.write(jsonEncode({'error': '不允许操作该路径: $path'}));
       await request.response.close();
