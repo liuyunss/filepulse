@@ -1,480 +1,171 @@
-// HTML 转义工具函数（防 XSS）
-function escapeHtml(str) {
-    if (!str) return '';
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+const $ = (id) => document.getElementById(id);
+function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function fmtSize(b) { if(b>=1073741824)return(b/1073741824).toFixed(2)+' GB'; if(b>=1048576)return(b/1048576).toFixed(2)+' MB'; if(b>=1024)return(b/1024).toFixed(2)+' KB'; return b+' B'; }
+function ext(n) { const p = n.split('.'); return p.length<=1||(p[0]===''&&p.length===2)?'':p.pop(); }
+
+// ── 模拟数据 ──
+const mockData = [
+    { name:'项目文档.docx', path:'Docs/项目文档.docx', size:2457600, extension:'docx', modified:new Date('2026-06-05T10:30:00') },
+    { name:'年度总结.pptx', path:'Docs/年度总结.pptx', size:15728640, extension:'pptx', modified:new Date('2026-05-20T14:00:00') },
+    { name:'logo.png', path:'Assets/logo.png', size:204800, extension:'png', modified:new Date('2026-06-01T09:00:00') },
+    { name:'background.jpg', path:'Assets/background.jpg', size:5242880, extension:'jpg', modified:new Date('2026-04-15T16:30:00') },
+    { name:'config.json', path:'Config/config.json', size:4096, extension:'json', modified:new Date('2026-06-06T08:00:00') },
+    { name:'database.sqlite', path:'Data/database.sqlite', size:104857600, extension:'sqlite', modified:new Date('2026-06-03T22:00:00') },
+    { name:'debug.log', path:'Logs/debug.log', size:0, extension:'log', modified:new Date('2026-05-01T00:00:00') },
+    { name:'error.log', path:'Logs/error.log', size:0, extension:'log', modified:new Date('2026-04-28T12:00:00') },
+    { name:'setup.exe', path:'Build/setup.exe', size:52428800, extension:'exe', modified:new Date('2026-03-10T18:00:00') },
+    { name:'README.md', path:'Docs/README.md', size:8192, extension:'md', modified:new Date('2026-06-05T23:00:00') },
+    { name:'style.css', path:'Web/style.css', size:16384, extension:'css', modified:new Date('2026-05-30T11:00:00') },
+    { name:'index.html', path:'Web/index.html', size:32768, extension:'html', modified:new Date('2026-06-04T20:00:00') },
+];
+
+let allFiles = [...mockData], sortKey = 'path', sortAsc = true, previewMode = false;
+
+function readConfig() { return {
+    name:$('name-filter').checked,nameOp:$('name-op').value,nameValue:$('name-value').value,nameNegate:$('name-negate').checked,
+    size:$('size-filter').checked,sizeOp:$('size-op').value,sizeValue:$('size-value').value,sizeUnit:$('size-unit').value,sizeNegate:$('size-negate').checked,
+    ext:$('ext-filter').checked,extValue:$('ext-value').value,extNegate:$('ext-negate').checked,
+    date:$('date-filter').checked,dateOp:$('date-op').value,dateValue:$('date-value').value,dateUnit:$('date-unit').value,dateNegate:$('date-negate').checked,
+    empty:$('empty-filter').checked,emptyNegate:$('empty-negate').checked,
+};}
+function applyConfig(c) {
+    for(let k of ['name','size','ext','date','empty']){$(`${k}-filter`).checked=c[k];}
+    $('name-op').value=c.nameOp;$('name-value').value=c.nameValue;$('name-negate').checked=c.nameNegate;
+    $('size-op').value=c.sizeOp;$('size-value').value=c.sizeValue;$('size-unit').value=c.sizeUnit;$('size-negate').checked=c.sizeNegate;
+    $('ext-value').value=c.extValue;$('ext-negate').checked=c.extNegate;
+    $('date-op').value=c.dateOp;$('date-value').value=c.dateValue;$('date-unit').value=c.dateUnit;$('date-negate').checked=c.dateNegate;
+    $('empty-negate').checked=c.emptyNegate;
+    // 加载规则后自动进入预览模式
+    previewMode = true;
+    $('btn-preview').style.background = 'var(--blue-bg)';
+    $('status-text').textContent = '预览模式 — 已加载规则';
+    updateSortBtns(); renderTable();
 }
-
-// 文件扩展名提取（正确处理隐藏文件和无扩展名文件）
-function getExtension(filename) {
-    const parts = filename.split('.');
-    if (parts.length <= 1) return '';             // 无扩展名：Makefile → ''
-    if (parts[0] === '' && parts.length === 2) return '';  // 隐藏文件无扩展名：.gitignore → ''
-    return parts.pop();                           // .env.local → 'local', file.txt → 'txt'
+function loadFiles(files, folder) {
+    allFiles = Array.from(files).filter(f=>f.name).map(f=>({name:f.name,path:f.webkitRelativePath||(folder?folder+'/'+f.name:f.name),size:f.size,extension:ext(f.name),modified:new Date(f.lastModified)}));
+    $('file-count').textContent=allFiles.length+' 个文件'; updateSortBtns(); renderTable();
 }
-
-// 全局状态
-let currentFiles = [];
-let selectedFolder = null;
-
-// 文件扫描
-function scanFolder(files) {
-    currentFiles = Array.from(files).map(f => ({
-        name: f.name,
-        size: f.size,
-        type: getExtension(f.name),
-        lastModified: new Date(f.lastModified),
-        path: f.webkitRelativePath
-    }));
-    renderFileList(currentFiles);
+function sorted(list) {
+    return [...list].sort((a,b)=>{let va=sortKey==='size'?a.size:sortKey==='modified'?a.modified.getTime():(a[sortKey]??'');let vb=sortKey==='size'?b.size:sortKey==='modified'?b.modified.getTime():(b[sortKey]??'');return(va<vb?-1:va>vb?1:0)*(sortAsc?1:-1);});
 }
+function filtered() { return allFiles.filter(f=>{
+    if($('name-filter').checked){const v=$('name-value').value.toLowerCase().trim();if(v){let m=$('name-op').value==='prefix'?f.name.toLowerCase().startsWith(v):$('name-op').value==='suffix'?f.name.toLowerCase().endsWith('.'+v):f.name.toLowerCase().includes(v);if($('name-negate').checked)m=!m;if(!m)return false;}}
+    if($('size-filter').checked){const v=parseFloat($('size-value').value);if(!isNaN(v)){const u=$('size-unit').value;let s=f.size/(u==='KB'?1024:u==='GB'?1073741824:1048576);let m=$('size-op').value==='gt'?s>v:$('size-op').value==='lt'?s<v:Math.abs(s-v)<=0.001;if($('size-negate').checked)m=!m;if(!m)return false;}}
+    if($('ext-filter').checked){const es=$('ext-value').value.split(',').map(e=>e.trim().toLowerCase()).filter(e=>e);let m=es.includes('.'+(f.extension||'').toLowerCase());if($('ext-negate').checked)m=!m;if(!m)return false;}
+    if($('date-filter').checked){const d=parseInt($('date-value').value);if(!isNaN(d)){const c=new Date(),u=$('date-unit').value;if(u==='hour')c.setHours(c.getHours()-d);else if(u==='month')c.setMonth(c.getMonth()-d);else c.setDate(c.getDate()-d);let m=$('date-op').value==='lt'?f.modified>=c:f.modified<c;if($('date-negate').checked)m=!m;if(!m)return false;}}
+    if($('empty-filter').checked){const dir=f.path.split('/').slice(0,-1).join('/'),sibs=allFiles.filter(s=>s.path.split('/').slice(0,-1).join('/')===dir);let m=sibs.every(s=>s.size===0);if($('empty-negate').checked)m=!m;if(!m)return false;}
+    return true;
+});}
 
-// 渲染文件列表（始终渲染全部文件，显示隐藏通过 applyFilters 控制）
-function renderFileList(files) {
-    const tbody = document.getElementById('file-tbody');
-    tbody.innerHTML = files.map(f => `
-        <tr data-path="${escapeHtml(f.path)}">
-            <td><input type="checkbox" class="file-checkbox" data-path="${escapeHtml(f.path)}"></td>
-            <td><a href="#" data-path="${escapeHtml(f.path)}">${escapeHtml(f.name)}</a></td>
-            <td>${formatSize(f.size)}</td>
-            <td>${escapeHtml(f.type)}</td>
-            <td>${f.lastModified.toLocaleDateString()}</td>
-            <td>${escapeHtml(f.path)}</td>
-        </tr>
-    `).join('');
+function updateAll() { $('file-count').textContent=allFiles.length+' 个文件'; updateSortBtns(); renderTable(); }
+function renderTable() {
+    const list = previewMode ? filtered() : allFiles;
+    const display = sorted(list);
+    const tb = $('file-tbody');
+    tb.innerHTML = display.map(f=>`<tr data-path="${esc(f.path)}"><td class="col-chk"><input type="checkbox" class="chk" data-path="${esc(f.path)}"></td><td title="${esc(f.path)}">${esc(f.path)}</td><td>${fmtSize(f.size)}</td><td>${esc(f.extension||'-')}</td><td>${f.modified.toLocaleDateString('zh-CN')} ${f.modified.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}</td><td class="col-action"><button class="loc-btn" data-path="${esc(f.path)}" title="打开文件位置">📂</button></td></tr>`).join('');
+    // bind open location
+    document.querySelectorAll('.loc-btn').forEach(btn=>{btn.onclick=(e)=>{e.stopPropagation();openLocation(btn.dataset.path);};});
+    // update select-all state
+    updateSelectAll();
 }
-
-// 通过 CSS display 控制行的显示/隐藏（保留复选框状态和滚动位置）
-function applyFilters() {
-    if (currentFiles.length === 0) return;
-    const filtered = filterFiles();
-    const filteredPaths = new Set(filtered.map(f => f.path));
-    document.querySelectorAll('#file-tbody tr').forEach(row => {
-        const path = row.dataset.path;
-        row.style.display = filteredPaths.has(path) ? '' : 'none';
-    });
+function updateSelectAll() {
+    const allChk = document.querySelectorAll('#file-tbody .chk');
+    const checked = document.querySelectorAll('#file-tbody .chk:checked');
+    $('select-all').checked = allChk.length > 0 && checked.length === allChk.length;
+    $('select-all').indeterminate = checked.length > 0 && checked.length < allChk.length;
 }
-
-// 打开文件
-function openFile(path) {
-    alert('打开文件: ' + path);
+function updateSortBtns() {
+    document.querySelectorAll('.sort-btn').forEach(btn=>{btn.classList.toggle('active',btn.dataset.sort===sortKey);btn.textContent=btn.dataset.sort===sortKey?(sortAsc?'▲':'▼'):'▲';});
 }
+function doSort(key) { if(sortKey===key)sortAsc=!sortAsc;else{sortKey=key;sortAsc=true;} updateSortBtns(); renderTable(); }
 
-// 格式化大小
-function formatSize(bytes) {
-    if (bytes >= 1073741824) return (bytes / 1073741824).toFixed(2) + ' GB';
-    if (bytes >= 1048576) return (bytes / 1048576).toFixed(2) + ' MB';
-    if (bytes >= 1024) return (bytes / 1024).toFixed(2) + ' KB';
-    return bytes + ' B';
-}
-
-// 筛选文件
-function filterFiles() {
-    return currentFiles.filter(f => {
-        // 大小筛选
-        if (document.getElementById('size-filter').checked) {
-            const op = document.getElementById('size-op').value;
-            const value = parseFloat(document.getElementById('size-value').value);
-            if (isNaN(value)) return true; // 无效输入跳过大小筛选
-            const unit = document.getElementById('size-unit').value;
-            let sizeMB = f.size / 1048576;
-            if (unit === 'KB') sizeMB = f.size / 1024;
-            if (unit === 'GB') sizeMB = f.size / 1073741824;
-            
-            let match = false;
-            if (op === 'gt') match = sizeMB > value;
-            if (op === 'lt') match = sizeMB < value;
-            if (op === 'eq') match = Math.abs(sizeMB - value) < 0.001;
-            
-            if (document.getElementById('size-negate').checked) match = !match;
-            if (!match) return false;
-        }
-        
-        // 后缀筛选
-        if (document.getElementById('ext-filter').checked) {
-            const exts = document.getElementById('ext-value').value.split(',').map(e => e.trim().toLowerCase());
-            const fileExt = '.' + f.type.toLowerCase();
-            let match = exts.some(ext => {
-                if (ext.includes('*')) {
-                    const regexPattern = ext.split('*').map(part => part.replace(/[.+?^${}()|[\]\\]/g, '\\$1')).join('.*');
-                    const regex = new RegExp('^' + regexPattern + '$');
-                    return regex.test(fileExt);
-                }
-                return fileExt === ext;
-            });
-            
-            if (document.getElementById('ext-negate').checked) match = !match;
-            if (!match) return false;
-        }
-        
-        // 日期筛选
-        if (document.getElementById('date-filter').checked) {
-            const days = parseInt(document.getElementById('date-value').value);
-            const cutoff = new Date();
-            cutoff.setDate(cutoff.getDate() - days);
-            let match = f.lastModified >= cutoff;
-            
-            if (document.getElementById('date-negate').checked) match = !match;
-            if (!match) return false;
-        }
-        
-        // 空文件夹筛选（文件所在文件夹的所有文件均为0字节）
-        if (document.getElementById('empty-filter').checked) {
-            const folderPath = f.path.split('/').slice(0, -1).join('/');
-            const siblingFiles = currentFiles.filter(sf => {
-                const sfFolder = sf.path.split('/').slice(0, -1).join('/');
-                return sfFolder === folderPath;
-            });
-            const match = siblingFiles.length > 0 && siblingFiles.every(sf => sf.size === 0);
-            
-            if (document.getElementById('empty-negate').checked) {
-                if (match) return false;
-            } else {
-                if (!match) return false;
-            }
-        }
-        
-        return true;
-    });
-}
-
-// 预览（高亮）
-function previewFiles() {
-    const filtered = filterFiles();
-    const filteredPaths = new Set(filtered.map(f => f.path));
-    const rows = document.querySelectorAll('#file-tbody tr');
-    rows.forEach(row => {
-        const path = row.dataset.path;
-        if (filteredPaths.has(path)) {
-            row.style.backgroundColor = '#ffcccc';
-        } else {
-            row.style.backgroundColor = '';
-        }
-    });
-}
-
-// 删除文件
-function deleteFiles() {
-    const selected = Array.from(document.querySelectorAll('.file-checkbox:checked'))
-        .map(cb => cb.dataset.path);
-    
-    if (selected.length === 0) {
-        alert('请先选择要删除的文件');
-        return;
+// ── 预览匹配：开关筛选显示 ──
+function togglePreview() {
+    previewMode = !previewMode;
+    if (previewMode) {
+        $('btn-preview').style.background = 'var(--blue-bg)';
+        $('status-text').textContent = '预览模式 — 筛选匹配中';
+    } else {
+        $('btn-preview').style.background = '';
+        $('status-text').textContent = '就绪';
     }
-    
-    if (confirm(`确定删除以下 ${selected.length} 个文件？\n\n${selected.join('\n')}`)) {
-        // 模拟删除
-        currentFiles = currentFiles.filter(f => !selected.includes(f.path));
-        renderFileList(currentFiles);
-        alert('删除成功');
-    }
+    renderTable();
 }
 
-// 解散文件夹预览
-// 空文件清理
-let emptyFiles = [];
-
-function scanEmptyFiles() {
-    const exts = document.getElementById('empty-ext-value').value
-        .split(',')
-        .map(e => e.trim().toLowerCase())
-        .filter(e => e);
-    
-    if (exts.length === 0) {
-        alert('请输入至少一个文件后缀');
-        return;
-    }
-    
-    // 筛选空文件（size === 0）
-    emptyFiles = currentFiles.filter(f => {
-        const ext = '.' + f.type.toLowerCase();
-        return f.size === 0 && exts.some(e => e === ext || e === '.' + f.type.toLowerCase());
-    });
-    
-    // 按文件夹分组
-    const folderMap = {};
-    emptyFiles.forEach(f => {
-        const parts = f.path.split('/');
-        // 取文件所在文件夹路径（去掉文件名）
-        const folderPath = parts.slice(0, -1).join('/') || '(根目录)';
-        if (!folderMap[folderPath]) {
-            folderMap[folderPath] = [];
-        }
-        folderMap[folderPath].push(f);
-    });
-    
-    // 渲染预览
-    const preview = document.getElementById('empty-cleanup-preview');
-    const countDiv = document.getElementById('empty-cleanup-count');
-    const listDiv = document.getElementById('empty-cleanup-list');
-    
-    if (emptyFiles.length === 0) {
-        countDiv.textContent = `未找到匹配的空文件`;
-        listDiv.innerHTML = '';
-        preview.style.display = 'block';
-        document.getElementById('btn-delete-empty').disabled = true;
-        return;
-    }
-    
-    countDiv.textContent = `找到 ${emptyFiles.length} 个空文件，分布在 ${Object.keys(folderMap).length} 个文件夹中：`;
-    
-    let html = '';
-    Object.keys(folderMap).sort().forEach(folder => {
-        const files = folderMap[folder];
-        html += `
-            <div style="margin: 8px 0; padding: 8px; background: #fff; border: 1px solid #eee; border-radius: 4px;">
-                <div style="font-weight: bold; color: #555;">📁 ${escapeHtml(folder)}</div>
-                <div style="margin-left: 20px; margin-top: 5px;">
-                    ${files.map(f => `
-                        <label style="display: block; color: #999;">
-                            <input type="checkbox" class="empty-file-checkbox" data-path="${escapeHtml(f.path)}" checked>
-                            📄 ${escapeHtml(f.name)} (${escapeHtml(f.type)}, 0KB)
-                        </label>
-                    `).join('')}
-                </div>
-            </div>
-        `;
-    });
-    
-    listDiv.innerHTML = html;
-    preview.style.display = 'block';
-    document.getElementById('btn-delete-empty').disabled = false;
+// ── 删除选中（直接作用于表格勾选） ──
+function deleteSelected() {
+    const paths = Array.from(document.querySelectorAll('#file-tbody .chk:checked')).map(c => c.dataset.path);
+    if (!paths.length) { alert('请先勾选文件'); return; }
+    if (!confirm('删除 ' + paths.length + ' 个文件？')) return;
+    allFiles = allFiles.filter(f => !paths.includes(f.path));
+    updateAll();
+    $('status-text').textContent = '已删除 ' + paths.length + ' 个文件';
 }
 
-function deleteEmptyFiles() {
-    const checked = Array.from(document.querySelectorAll('.empty-file-checkbox:checked'))
-        .map(cb => cb.dataset.path);
-    
-    if (checked.length === 0) {
-        alert('请先勾选要删除的文件');
-        return;
-    }
-    
-    if (!confirm(`确定删除以下 ${checked.length} 个空文件？\n\n${checked.join('\n')}`)) {
-        return;
-    }
-    
-    // 模拟删除
-    currentFiles = currentFiles.filter(f => !checked.includes(f.path));
-    renderFileList(currentFiles);
-    
-    // 重新扫描
-    scanEmptyFiles();
-    
-    alert(`已删除 ${checked.length} 个空文件`);
+// ── 打开文件位置 ──
+function openLocation(path) {
+    alert('打开文件位置: ' + path + '\n\n(浏览器中为模拟，exe中用原生API打开)');
 }
 
-// 解散文件夹预览
-function previewDissolve() {
-    const keepLevels = parseInt(document.getElementById('keep-levels').value) || 1;
-    const preview = document.getElementById('dissolve-preview');
-    
-    // 模拟解散预览
-    preview.innerHTML = `
-        <div style="margin: 10px 0; padding: 10px; background: #f0f0f0;">
-            <div><strong>解散预览（保留${keepLevels}级）：</strong></div>
-            <div style="margin-top: 10px;">
-                <div>原始结构：</div>
-                <pre>📁 测试文件夹/
-├── 📁 文档/
-│   └── 📁 子文件夹/
-│       └── 📄 笔记.txt
-└── 📁 视频/
-    └── 📄 电影.mp4</pre>
-            </div>
-            <div style="margin-top: 10px;">
-                <div>解散后：</div>
-                <pre>📁 测试文件夹/
-├── 📁 文档/
-│   └── 📄 笔记.txt    ← 从子文件夹提到文档
-└── 📁 视频/
-    └── 📄 电影.mp4</pre>
-            </div>
-            <div style="margin-top: 10px; color: red;">
-                将删除的空文件夹：子文件夹
-            </div>
-        </div>
-    `;
-    preview.style.display = 'block';
-}
-
-// 规则保存
-function getRules() {
-    try {
-        return JSON.parse(localStorage.getItem('filepulse_rules') || '[]');
-    } catch (e) {
-        console.warn('规则数据解析失败，使用默认值', e);
-        return [];
-    }
-}
-
-function saveRule(name) {
-    const rules = getRules();
-    rules.push({
-        name,
-        conditions: {
-            size: document.getElementById('size-filter').checked,
-            sizeOp: document.getElementById('size-op').value,
-            sizeValue: document.getElementById('size-value').value,
-            sizeUnit: document.getElementById('size-unit').value,
-            sizeNegate: document.getElementById('size-negate').checked,
-            ext: document.getElementById('ext-filter').checked,
-            extValue: document.getElementById('ext-value').value,
-            extNegate: document.getElementById('ext-negate').checked,
-            date: document.getElementById('date-filter').checked,
-            dateValue: document.getElementById('date-value').value,
-            dateNegate: document.getElementById('date-negate').checked,
-        }
-    });
-    localStorage.setItem('filepulse_rules', JSON.stringify(rules));
-    renderRules();
-}
-
+// ── 规则 ──
+function getRules() { try{return JSON.parse(localStorage.getItem('fp_rules')||'[]');}catch{return[];} }
+function saveRule(name) { const rules = getRules(); rules.push({name,config:readConfig()}); localStorage.setItem('fp_rules',JSON.stringify(rules)); renderRules(); }
+function deleteRule(i) { const rules = getRules(); rules.splice(i,1); localStorage.setItem('fp_rules',JSON.stringify(rules)); renderRules(); }
 function renderRules() {
-    const rules = getRules();
-    const list = document.getElementById('rules-list');
-    list.innerHTML = rules.map((r, i) => `
-        <label>
-            <input type="checkbox" class="rule-checkbox" data-index="${i}">
-            ${escapeHtml(r.name)}
-        </label>
-    `).join('');
+    $('rules-list').innerHTML = getRules().map((r,i)=>{
+        const cfg = r.config;
+        const parts = [];
+        if(cfg.name) parts.push('名称:'+(cfg.nameOp==='prefix'?'前缀':'包含')+' '+cfg.nameValue);
+        if(cfg.size) parts.push('大小'+(cfg.sizeOp==='gt'?'>':'<')+cfg.sizeValue+cfg.sizeUnit);
+        if(cfg.ext) parts.push('后缀:'+cfg.extValue);
+        if(cfg.date) parts.push('日期:'+(cfg.dateOp==='lt'?'最近':'早于')+cfg.dateValue+cfg.dateUnit);
+        if(cfg.empty) parts.push('空文件夹');
+        const summary = parts.length ? parts.join(' | ') : '无筛选条件';
+        return `<div class="rule-item"><span class="rule-name" title="${esc(summary)}">${esc(r.name)}<span style="color:#999;font-size:10px"> — ${esc(summary)}</span></span><button data-idx="${i}" class="rule-load" style="font-size:10px;padding:1px 5px">加载</button><span class="rule-del" data-idx="${i}">✕</span></div>`;
+    }).join('');
+    document.querySelectorAll('.rule-load').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();applyConfig(getRules()[parseInt(b.dataset.idx)].config);}));
+    document.querySelectorAll('.rule-del').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();deleteRule(parseInt(b.dataset.idx));}));
 }
 
-// 初始化
+// ── 初始化 ──
 document.addEventListener('DOMContentLoaded', () => {
-    // 文件夹选择
-    const dropZone = document.getElementById('drop-zone');
-    const folderInput = document.getElementById('folder-input');
-    
-    dropZone.addEventListener('click', () => folderInput.click());
-    
-    dropZone.addEventListener('dragover', e => {
-        e.preventDefault();
-        dropZone.style.borderColor = '#007bff';
-    });
-    
-    dropZone.addEventListener('dragleave', () => {
-        dropZone.style.borderColor = '#ccc';
-    });
-    
-    dropZone.addEventListener('drop', e => {
-        e.preventDefault();
-        dropZone.style.borderColor = '#ccc';
-        const files = e.dataTransfer.files;
-        if (files.length > 0) {
-            document.getElementById('current-path').textContent = 
-                '当前路径：' + files[0].webkitRelativePath.split('/')[0];
-            scanFolder(files);
-        }
-    });
-    
-    folderInput.addEventListener('change', e => {
-        const files = e.target.files;
-        if (files.length > 0) {
-            document.getElementById('current-path').textContent = 
-                '当前路径：' + files[0].webkitRelativePath.split('/')[0];
-            scanFolder(files);
-        }
-    });
-    
-    // 按钮事件
-    document.getElementById('btn-scan').addEventListener('click', () => {
-        if (currentFiles.length === 0) {
-            alert('请先选择文件夹');
-        } else {
-            renderFileList(currentFiles);
-        }
-    });
-    
-    document.getElementById('btn-preview').addEventListener('click', previewFiles);
-    document.getElementById('btn-delete').addEventListener('click', deleteFiles);
-    
-    document.getElementById('btn-advanced').addEventListener('click', () => {
-        const panel = document.getElementById('advanced-panel');
-        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-    });
-    
-    document.getElementById('btn-preview-dissolve').addEventListener('click', previewDissolve);
-    
-    document.getElementById('btn-save-rule').addEventListener('click', () => {
-        const name = prompt('请输入规则名称：');
-        if (name) saveRule(name);
-    });
-    
-    document.getElementById('btn-execute-rule').addEventListener('click', () => {
-        const checked = document.querySelector('.rule-checkbox:checked');
-        if (!checked) {
-            alert('请先选择一个规则');
-            return;
-        }
-        alert('执行规则：' + checked.parentElement.textContent.trim());
-    });
-    
-    document.getElementById('btn-delete-rule').addEventListener('click', () => {
-        const checked = document.querySelector('.rule-checkbox:checked');
-        if (!checked) {
-            alert('请先选择一个规则');
-            return;
-        }
-        const index = parseInt(checked.dataset.index);
-        if (isNaN(index)) return;
-        if (confirm(`确定删除规则 "${document.querySelector('.rule-checkbox:checked').parentElement.textContent.trim()}"？`)) {
-            const rules = getRules();
-            rules.splice(index, 1);
-            localStorage.setItem('filepulse_rules', JSON.stringify(rules));
-            renderRules();
-        }
-    });
-    
-    document.getElementById('btn-execute-dissolve').addEventListener('click', () => {
-        alert('执行解散（模拟）');
-    });
-    
-    // 空文件清理
-    document.getElementById('btn-empty-cleanup').addEventListener('click', () => {
-        const panel = document.getElementById('empty-cleanup-section');
-        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-        const advPanel = document.getElementById('advanced-panel');
-        advPanel.style.display = 'block';
-    });
-    
-    document.getElementById('btn-close-empty-cleanup').addEventListener('click', () => {
-        document.getElementById('empty-cleanup-section').style.display = 'none';
-    });
-    
-    document.getElementById('btn-scan-empty').addEventListener('click', scanEmptyFiles);
-    document.getElementById('btn-delete-empty').addEventListener('click', deleteEmptyFiles);
-    
-    // 全选（仅选中可见行，排除被筛选隐藏的行）
-    document.getElementById('select-all').addEventListener('change', e => {
-        document.querySelectorAll('.file-checkbox').forEach(cb => {
-            const row = cb.closest('tr');
-            if (row && row.style.display !== 'none') {
-                cb.checked = e.target.checked;
-            }
-        });
-    });
-    
-    // 文件链接点击（事件委托，替代行内 onclick）
-    document.getElementById('file-tbody').addEventListener('click', e => {
-        const link = e.target.closest('a[data-path]');
-        if (link) {
-            e.preventDefault();
-            openFile(link.dataset.path);
-        }
-    });
-    
-    // 筛选条件变化时实时更新（使用 CSS display 控制，保留状态和滚动位置）
+    updateAll();
+    const dz = $('drop-zone'), fi = $('folder-input');
+    $('btn-browse').addEventListener('click', e => { e.stopPropagation(); fi.value = ''; fi.click(); });
+    dz.addEventListener('click', () => { fi.value = ''; fi.click(); });
+    fi.addEventListener('change', e => { const f = e.target.files; if (f?.length) loadFiles(f, f[0].webkitRelativePath.split('/')[0]); });
+
+    let dc = 0;
+    document.addEventListener('dragenter', e => { e.preventDefault(); dc++; dz.classList.add('drag-over'); document.body.classList.add('drag-over'); });
+    document.addEventListener('dragleave', e => { e.preventDefault(); dc--; if (dc <= 0) { dc = 0; dz.classList.remove('drag-over'); document.body.classList.remove('drag-over'); } });
+    document.addEventListener('dragover', e => e.preventDefault());
+    document.addEventListener('drop', e => { e.preventDefault(); dc = 0; dz.classList.remove('drag-over'); document.body.classList.remove('drag-over'); const f = e.dataTransfer.files; if (f?.length) loadFiles(f, f[0].webkitRelativePath?.split('/')[0] || ''); });
+
+    document.querySelectorAll('.sort-btn').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); doSort(b.dataset.sort); }));
+    // 筛选条件变化：保持在预览模式时实时更新，普通模式只更新表头
     document.querySelectorAll('#filters input, #filters select').forEach(el => {
-        el.addEventListener('change', () => {
-            if (currentFiles.length > 0) {
-                applyFilters();
-            }
-        });
+        const handler = () => {
+            if (previewMode) renderTable();
+            updateSortBtns();
+        };
+        el.addEventListener('change', handler);
+        if (el.type === 'text' || el.type === 'number') el.addEventListener('input', handler);
     });
-    
+
+    $('btn-preview').addEventListener('click', togglePreview);
+    $('btn-delete').addEventListener('click', deleteSelected);
+
+    $('select-all').addEventListener('change', e => {
+        document.querySelectorAll('#file-tbody .chk').forEach(c => { c.checked = e.target.checked; });
+    });
+    $('file-tbody').addEventListener('click', e => {
+        if (e.target.classList.contains('loc-btn')) return;
+        const row = e.target.closest('tr'), cb = row?.querySelector('.chk');
+        if (cb && e.target !== cb) { cb.checked = !cb.checked; updateSelectAll(); }
+    });
+    document.addEventListener('change', e => { if (e.target.classList.contains('chk')) updateSelectAll(); });
+
+    $('btn-save-rule').addEventListener('click', () => { const n = $('rule-name').value.trim(); if (!n) { alert('请输入名称'); return; } saveRule(n); $('rule-name').value = ''; });
+    $('btn-dissolve').addEventListener('click', () => alert('解散预览（保留' + $('keep-levels').value + '级）\n\n(浏览器中为模拟)'));
     renderRules();
 });
