@@ -251,9 +251,9 @@ class FileService extends ChangeNotifier {
       if (_extFilterEnabled && _extValue.isNotEmpty) {
         final exts = _extValue
             .split(',')
-            .map((e) => e.trim().toLowerCase())
+            .map((e) => e.trim().toLowerCase().replaceAll('.', ''))
             .toList();
-        final fileExt = '.${f.extension.toLowerCase()}';
+        final fileExt = f.extension.toLowerCase();
         bool match = exts.any((ext) {
           if (ext.contains('*')) {
             return fileExt.contains(ext.replaceAll('*', ''));
@@ -371,12 +371,12 @@ class FileService extends ChangeNotifier {
   void scanEmptyFiles() {
     final exts = _emptyExtFilter
         .split(',')
-        .map((e) => e.trim().toLowerCase())
+        .map((e) => e.trim().toLowerCase().replaceAll('.', ''))
         .toList();
     _emptyFiles = _files.where((f) {
       if (f.size != 0) return false;
       if (f.isDirectory) return false;
-      final fileExt = '.${f.extension.toLowerCase()}';
+      final fileExt = f.extension.toLowerCase();
       return exts.any((ext) {
         if (ext.contains('*')) {
           return fileExt.contains(ext.replaceAll('*', ''));
