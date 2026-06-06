@@ -12,12 +12,10 @@ class FilterPanel extends StatefulWidget {
 
 class _FilterPanelState extends State<FilterPanel> {
   Timer? _nameDebounce;
-  Timer? _extDebounce;
 
   @override
   void dispose() {
     _nameDebounce?.cancel();
-    _extDebounce?.cancel();
     super.dispose();
   }
 
