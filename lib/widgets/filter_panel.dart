@@ -1,9 +1,25 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/file_service.dart';
 
-class FilterPanel extends StatelessWidget {
+class FilterPanel extends StatefulWidget {
   const FilterPanel({super.key});
+
+  @override
+  State<FilterPanel> createState() => _FilterPanelState();
+}
+
+class _FilterPanelState extends State<FilterPanel> {
+  Timer? _nameDebounce;
+  Timer? _extDebounce;
+
+  @override
+  void dispose() {
+    _nameDebounce?.cancel();
+    _extDebounce?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -95,7 +111,12 @@ class FilterPanel extends StatelessWidget {
                   EdgeInsets.symmetric(horizontal: 8, vertical: 8),
               border: OutlineInputBorder(),
             ),
-            onChanged: (v) => service.updateNameFilter(value: v),
+            onChanged: (v) {
+              _nameDebounce?.cancel();
+              _nameDebounce = Timer(const Duration(milliseconds: 300), () {
+                service.updateNameFilter(value: v);
+              });
+            },
           ),
         ),
         const SizedBox(width: 8),
