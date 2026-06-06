@@ -120,13 +120,13 @@ class FileServer {
                 await _scanDirectory(entity, files, maxThreads: maxThreads);
               }
             } catch (e) {
-              debugPrint('跳过无法访问的文件: ${entity.path} - $e');
+              print('跳过无法访问的文件: ${entity.path} - $e');
             }
           }),
         );
       }
     } catch (e) {
-      debugPrint('跳过无法访问的目录: ${dir.path} - $e');
+      print('跳过无法访问的目录: ${dir.path} - $e');
     }
   }
 
@@ -215,7 +215,8 @@ class FileServer {
 
   /// 路径安全验证：拒绝系统敏感路径，确保在已扫描目录内
   bool _isPathAllowed(String path) {
-    final resolved = File(path).absolute.path;
+    // 使用 p.normalize() 规范化路径，解析 .. 段防止路径遍历
+    final resolved = p.normalize(File(path).absolute.path);
     // 拒绝系统敏感目录
     final blockedPrefixes = ['/etc', '/bin', '/sbin', '/usr', '/sys', '/proc', '/dev', '/boot', '/lib'];
     for (final prefix in blockedPrefixes) {
@@ -223,8 +224,11 @@ class FileServer {
     }
     // 如果有已扫描路径，验证是否在其下
     if (_scannedPath.isNotEmpty) {
-      final scannedDir = Directory(_scannedPath).absolute.path;
+      final scannedDir = p.normalize(Directory(_scannedPath).absolute.path);
       if (!resolved.startsWith(scannedDir)) return false;
+    } else {
+      // 未扫描状态下拒绝所有操作，防止未授权访问
+      return false;
     }
     return true;
   }
