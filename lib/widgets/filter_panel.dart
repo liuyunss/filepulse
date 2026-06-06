@@ -149,8 +149,24 @@ class _FilterPanelState extends State<FilterPanel> {
         ],
       ),
       selected: service.sizeFilterEnabled,
-      onSelected: (selected) =>
-          service.updateSizeFilter(enabled: selected),
+      onSelected: (selected) {
+        if (selected && !service.sizeFilterEnabled) {
+          // 首次启用：直接开启
+          service.updateSizeFilter(enabled: true);
+        } else if (service.sizeFilterEnabled) {
+          // 已启用：打开配置对话框
+          _showSizeFilterDialog(context, service);
+        } else {
+          service.updateSizeFilter(enabled: false);
+        }
+      },
+    );
+  }
+
+  void _showSizeFilterDialog(BuildContext context, FileService service) {
+    showDialog(
+      context: context,
+      builder: (ctx) => _SizeFilterDialog(service: service),
     );
   }
 
@@ -171,8 +187,22 @@ class _FilterPanelState extends State<FilterPanel> {
         ],
       ),
       selected: service.extFilterEnabled,
-      onSelected: (selected) =>
-          service.updateExtFilter(enabled: selected),
+      onSelected: (selected) {
+        if (selected && !service.extFilterEnabled) {
+          service.updateExtFilter(enabled: true);
+        } else if (service.extFilterEnabled) {
+          _showExtFilterDialog(context, service);
+        } else {
+          service.updateExtFilter(enabled: false);
+        }
+      },
+    );
+  }
+
+  void _showExtFilterDialog(BuildContext context, FileService service) {
+    showDialog(
+      context: context,
+      builder: (ctx) => _ExtFilterDialog(service: service),
     );
   }
 
@@ -193,8 +223,22 @@ class _FilterPanelState extends State<FilterPanel> {
         ],
       ),
       selected: service.dateFilterEnabled,
-      onSelected: (selected) =>
-          service.updateDateFilter(enabled: selected),
+      onSelected: (selected) {
+        if (selected && !service.dateFilterEnabled) {
+          service.updateDateFilter(enabled: true);
+        } else if (service.dateFilterEnabled) {
+          _showDateFilterDialog(context, service);
+        } else {
+          service.updateDateFilter(enabled: false);
+        }
+      },
+    );
+  }
+
+  void _showDateFilterDialog(BuildContext context, FileService service) {
+    showDialog(
+      context: context,
+      builder: (ctx) => _DateFilterDialog(service: service),
     );
   }
 
@@ -215,6 +259,315 @@ class _FilterPanelState extends State<FilterPanel> {
       selected: service.emptyFilterEnabled,
       onSelected: (selected) =>
           service.updateEmptyFilter(enabled: selected),
+    );
+  }
+}
+
+// ─── 大小筛选对话框 ────────────────────────────────────────
+
+class _SizeFilterDialog extends StatefulWidget {
+  final FileService service;
+  const _SizeFilterDialog({required this.service});
+
+  @override
+  State<_SizeFilterDialog> createState() => _SizeFilterDialogState();
+}
+
+class _SizeFilterDialogState extends State<_SizeFilterDialog> {
+  late String _operator;
+  late TextEditingController _valueController;
+  late String _unit;
+  late bool _negate;
+
+  @override
+  void initState() {
+    super.initState();
+    _operator = widget.service.sizeOperator;
+    _valueController = TextEditingController(
+      text: widget.service.sizeValue.toString(),
+    );
+    _unit = widget.service.sizeUnit;
+    _negate = widget.service.sizeNegate;
+  }
+
+  @override
+  void dispose() {
+    _valueController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('大小筛选'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              // 操作符
+              SizedBox(
+                width: 70,
+                child: DropdownButtonFormField<String>(
+                  value: _operator,
+                  isDense: true,
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'gt', child: Text('大于 >')),
+                    DropdownMenuItem(value: 'lt', child: Text('小于 <')),
+                    DropdownMenuItem(value: 'eq', child: Text('等于 =')),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) setState(() => _operator = v);
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              // 数值
+              Expanded(
+                child: TextField(
+                  controller: _valueController,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    hintText: '数值',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // 单位
+              SizedBox(
+                width: 70,
+                child: DropdownButtonFormField<String>(
+                  value: _unit,
+                  isDense: true,
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'KB', child: Text('KB')),
+                    DropdownMenuItem(value: 'MB', child: Text('MB')),
+                    DropdownMenuItem(value: 'GB', child: Text('GB')),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) setState(() => _unit = v);
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Checkbox(
+                value: _negate,
+                onChanged: (v) =>
+                    setState(() => _negate = v ?? false),
+              ),
+              const Text('取反'),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final value = double.tryParse(_valueController.text) ?? 10;
+            widget.service.updateSizeFilter(
+              enabled: true,
+              op: _operator,
+              value: value,
+              unit: _unit,
+              negate: _negate,
+            );
+            Navigator.pop(context);
+          },
+          child: const Text('应用'),
+        ),
+      ],
+    );
+  }
+}
+
+// ─── 后缀筛选对话框 ────────────────────────────────────────
+
+class _ExtFilterDialog extends StatefulWidget {
+  final FileService service;
+  const _ExtFilterDialog({required this.service});
+
+  @override
+  State<_ExtFilterDialog> createState() => _ExtFilterDialogState();
+}
+
+class _ExtFilterDialogState extends State<_ExtFilterDialog> {
+  late TextEditingController _extController;
+  late bool _negate;
+
+  @override
+  void initState() {
+    super.initState();
+    _extController = TextEditingController(
+      text: widget.service.extValue,
+    );
+    _negate = widget.service.extNegate;
+  }
+
+  @override
+  void dispose() {
+    _extController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('后缀筛选'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _extController,
+            decoration: const InputDecoration(
+              hintText: 'jpg,png,gif（逗号分隔，支持 * 通配）',
+              isDense: true,
+              border: OutlineInputBorder(),
+            ),
+            autofocus: true,
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Checkbox(
+                value: _negate,
+                onChanged: (v) =>
+                    setState(() => _negate = v ?? false),
+              ),
+              const Text('取反（排除这些后缀）'),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () {
+            widget.service.updateExtFilter(
+              enabled: _extController.text.trim().isNotEmpty,
+              value: _extController.text.trim(),
+              negate: _negate,
+            );
+            Navigator.pop(context);
+          },
+          child: const Text('应用'),
+        ),
+      ],
+    );
+  }
+}
+
+// ─── 日期筛选对话框 ────────────────────────────────────────
+
+class _DateFilterDialog extends StatefulWidget {
+  final FileService service;
+  const _DateFilterDialog({required this.service});
+
+  @override
+  State<_DateFilterDialog> createState() => _DateFilterDialogState();
+}
+
+class _DateFilterDialogState extends State<_DateFilterDialog> {
+  late TextEditingController _daysController;
+  late bool _negate;
+
+  @override
+  void initState() {
+    super.initState();
+    _daysController = TextEditingController(
+      text: widget.service.dateValue.toString(),
+    );
+    _negate = widget.service.dateNegate;
+  }
+
+  @override
+  void dispose() {
+    _daysController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('日期筛选'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              const Text('近'),
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 80,
+                child: TextField(
+                  controller: _daysController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Text('天内修改'),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Checkbox(
+                value: _negate,
+                onChanged: (v) =>
+                    setState(() => _negate = v ?? false),
+              ),
+              const Text('取反（排除这些日期）'),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final days = int.tryParse(_daysController.text) ?? 7;
+            widget.service.updateDateFilter(
+              enabled: true,
+              value: days,
+              negate: _negate,
+            );
+            Navigator.pop(context);
+          },
+          child: const Text('应用'),
+        ),
+      ],
     );
   }
 }
