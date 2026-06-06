@@ -10,7 +10,7 @@ class FileServer {
   FileServer({this.port = 8080});
 
   Future<void> start() async {
-    _server = await HttpServer.bind(Internet.anyIPv4, port);
+    _server = await HttpServer.bind(Internet.loopbackIPv4, port);
     print('文件脉搏服务已启动: http://localhost:$port');
 
     await for (final request in _server) {
