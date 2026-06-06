@@ -78,12 +78,11 @@ jobs:
       - name: Create macOS DMG
         if: matrix.platform == 'macos'
         run: |
-          # 使用 hdiutil 创建 DMG
-          cd build/macos/Build/Products/Release
+          mkdir -p build/macos/Build/Products/Release
           hdiutil create -volname "FilePulse" \
-            -srcfolder "FilePulse.app" \
+            -srcfolder "build/macos/Build/Products/Release/FilePulse.app" \
             -ov -format UDZO \
-            ../../../FilePulse-macos.dmg
+            "build/macos/Build/Products/Release/FilePulse-macos.dmg"
 
       - name: Upload macOS artifacts
         if: matrix.platform == 'macos'
@@ -103,7 +102,8 @@ jobs:
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
-          Compress-Archive -Path "build\windows\x64\runner\Release\*" \
+          New-Item -ItemType Directory -Force -Path build\windows\x64\release
+          Compress-Archive -Path "build\windows\x64\runner\Release\*" `
             -DestinationPath "build\windows\x64\release\FilePulse-windows-x64.zip"
 
       - name: Upload Windows artifacts
