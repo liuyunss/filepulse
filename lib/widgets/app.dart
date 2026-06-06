@@ -96,7 +96,7 @@ class _BottomActionBar extends StatelessWidget {
                 icon: const Icon(Icons.search, size: 18),
                 label: const Text('扫描'),
                 style: FilledButton.styleFrom(
-                  backgroundColor: Colors.grey.shade600,
+                  backgroundColor: Theme.of(context).colorScheme.primary,
                 ),
               ),
               const SizedBox(width: 8),
