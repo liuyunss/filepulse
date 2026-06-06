@@ -48,6 +48,8 @@ class FileItem {
     return FileItem.formatSize(size);
   }
 
-  /// 用于重复文件检测的 key：文件名+大小
-  String get duplicateKey => '${name}_|$size';
+  /// 用于重复文件检测的 key：文件名+扩展名+大小
+  /// 注意：此处使用启发式匹配。如需更精确检测，可考虑基于内容的哈希（如 MD5/SHA256），
+  /// 但会显著增加大目录的扫描时间。
+  String get duplicateKey => '${name}_${extension}_|$size';
 }
