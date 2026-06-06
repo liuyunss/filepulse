@@ -73,7 +73,7 @@ jobs:
       # ─── macOS Build ─────────────────────────────────────
       - name: Build macOS
         if: matrix.platform == 'macos'
-        run: flutter build macos --release --no-codesign
+        run: flutter build macos --release
 
       - name: Package macOS (zip)
         if: matrix.platform == 'macos'
