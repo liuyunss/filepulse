@@ -5,6 +5,15 @@ build/
 .flutter-plugins
 .flutter-plugins-dependencies
 pubspec.lock
+.metadata
+
+# ── Node.js ─────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
 
 # ── Frontend Build ──────────────────────────────────────────
 dist/
@@ -20,6 +29,7 @@ out/
 .project
 .classpath
 .settings/
+*.iml
 
 # ── OS ──────────────────────────────────────────────────────
 .DS_Store

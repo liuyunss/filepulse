@@ -1,93 +1,33 @@
 class FilterRule {
   final String name;
-
-  // 名称筛选
-  final bool nameFilterEnabled;
-  final String nameOperator; // contains, prefix, suffix
-  final String nameValue;
-  final bool nameNegate;
-
-  // 大小筛选
-  final bool sizeFilterEnabled;
-  final String sizeOperator; // gt, lt, eq
-  final double sizeValue;
-  final String sizeUnit; // KB, MB, GB
-  final bool sizeNegate;
-
-  // 后缀筛选
-  final bool extFilterEnabled;
-  final String extValue;
-  final bool extNegate;
-
-  // 日期筛选
-  final bool dateFilterEnabled;
-  final int dateValue;
-  final bool dateNegate;
-
-  // 空文件夹筛选
-  final bool emptyFilterEnabled;
-  final bool emptyNegate;
+  final bool nEn; final String nOp; final String nVal; final bool nNeg;
+  final bool sEn; final String sOp; final double sVal; final String sUnit; final bool sNeg;
+  final bool eEn; final String eVal; final bool eNeg;
+  final bool dEn; final String dOp; final int dVal; final String dUnit; final bool dNeg;
+  final bool emEn; final bool emNeg;
 
   const FilterRule({
     this.name = '',
-    this.nameFilterEnabled = false,
-    this.nameOperator = 'contains',
-    this.nameValue = '',
-    this.nameNegate = false,
-    this.sizeFilterEnabled = false,
-    this.sizeOperator = 'gt',
-    this.sizeValue = 10,
-    this.sizeUnit = 'MB',
-    this.sizeNegate = false,
-    this.extFilterEnabled = false,
-    this.extValue = '',
-    this.extNegate = false,
-    this.dateFilterEnabled = false,
-    this.dateValue = 7,
-    this.dateNegate = false,
-    this.emptyFilterEnabled = false,
-    this.emptyNegate = false,
+    this.nEn = false, this.nOp = 'contains', this.nVal = '', this.nNeg = false,
+    this.sEn = false, this.sOp = 'gt', this.sVal = 10, this.sUnit = 'MB', this.sNeg = false,
+    this.eEn = false, this.eVal = '', this.eNeg = false,
+    this.dEn = false, this.dOp = 'lt', this.dVal = 7, this.dUnit = 'day', this.dNeg = false,
+    this.emEn = false, this.emNeg = false,
   });
 
   Map<String, dynamic> toJson() => {
-        'name': name,
-        'nameFilterEnabled': nameFilterEnabled,
-        'nameOperator': nameOperator,
-        'nameValue': nameValue,
-        'nameNegate': nameNegate,
-        'sizeFilterEnabled': sizeFilterEnabled,
-        'sizeOperator': sizeOperator,
-        'sizeValue': sizeValue,
-        'sizeUnit': sizeUnit,
-        'sizeNegate': sizeNegate,
-        'extFilterEnabled': extFilterEnabled,
-        'extValue': extValue,
-        'extNegate': extNegate,
-        'dateFilterEnabled': dateFilterEnabled,
-        'dateValue': dateValue,
-        'dateNegate': dateNegate,
-        'emptyFilterEnabled': emptyFilterEnabled,
-        'emptyNegate': emptyNegate,
-      };
+    'name':name,'nEn':nEn,'nOp':nOp,'nVal':nVal,'nNeg':nNeg,
+    'sEn':sEn,'sOp':sOp,'sVal':sVal,'sUnit':sUnit,'sNeg':sNeg,
+    'eEn':eEn,'eVal':eVal,'eNeg':eNeg,
+    'dEn':dEn,'dOp':dOp,'dVal':dVal,'dUnit':dUnit,'dNeg':dNeg,
+    'emEn':emEn,'emNeg':emNeg,
+  };
 
-  factory FilterRule.fromJson(Map<String, dynamic> json) => FilterRule(
-        name: json['name'] ?? '',
-        nameFilterEnabled: json['nameFilterEnabled'] ?? false,
-        nameOperator: json['nameOperator'] ?? 'contains',
-        nameValue: json['nameValue'] ?? '',
-        nameNegate: json['nameNegate'] ?? false,
-        sizeFilterEnabled: json['sizeFilterEnabled'] ?? false,
-        sizeOperator: json['sizeOperator'] ?? 'gt',
-        sizeValue: (json['sizeValue'] ?? 10).toDouble(),
-        sizeUnit: json['sizeUnit'] ?? 'MB',
-        sizeNegate: json['sizeNegate'] ?? false,
-        extFilterEnabled: json['extFilterEnabled'] ?? false,
-        extValue: json['extValue'] ?? '',
-        extNegate: json['extNegate'] ?? false,
-        dateFilterEnabled: json['dateFilterEnabled'] ?? false,
-        dateValue: json['dateValue'] ?? 7,
-        dateNegate: json['dateNegate'] ?? false,
-        emptyFilterEnabled: json['emptyFilterEnabled'] ?? false,
-        emptyNegate: json['emptyNegate'] ?? false,
-      );
+  factory FilterRule.fromJson(Map<String, dynamic> j) => FilterRule(
+    name: j['name']??'', nEn: j['nEn']??false, nOp: j['nOp']??'contains', nVal: j['nVal']??'', nNeg: j['nNeg']??false,
+    sEn: j['sEn']??false, sOp: j['sOp']??'gt', sVal: (j['sVal']??10).toDouble(), sUnit: j['sUnit']??'MB', sNeg: j['sNeg']??false,
+    eEn: j['eEn']??false, eVal: j['eVal']??'', eNeg: j['eNeg']??false,
+    dEn: j['dEn']??false, dOp: j['dOp']??'lt', dVal: j['dVal']??7, dUnit: j['dUnit']??'day', dNeg: j['dNeg']??false,
+    emEn: j['emEn']??false, emNeg: j['emNeg']??false,
+  );
 }

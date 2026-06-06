@@ -4,6 +4,7 @@ import 'services/file_service.dart';
 import 'widgets/app.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(
     ChangeNotifierProvider(
       create: (_) => FileService(),

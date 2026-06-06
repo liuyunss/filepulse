@@ -1,6 +1,7 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/file_item.dart';
 import '../models/filter_rule.dart';
@@ -10,489 +11,295 @@ class FileService extends ChangeNotifier {
   List<FileItem> _filteredFiles = [];
   String _currentPath = '';
   bool _isLoading = false;
-  String? _error;
 
-  // 名称筛选
-  bool _nameFilterEnabled = false;
-  String _nameOperator = 'contains';
-  String _nameValue = '';
-  bool _nameNegate = false;
+  // ─── 筛选状态 ───
+  bool _nEn = false; String _nOp = 'contains'; String _nVal = ''; bool _nNeg = false;
+  bool _sEn = false; String _sOp = 'gt'; double _sVal = 10; String _sUnit = 'MB'; bool _sNeg = false;
+  bool _eEn = false; String _eVal = '.jpg,.mp4'; bool _eNeg = false;
+  bool _dEn = false; String _dOp = 'lt'; int _dVal = 7; String _dUnit = 'day'; bool _dNeg = false;
+  bool _emEn = false; bool _emNeg = false;
 
-  // 大小筛选
-  bool _sizeFilterEnabled = false;
-  String _sizeOperator = 'gt';
-  double _sizeValue = 10;
-  String _sizeUnit = 'MB';
-  bool _sizeNegate = false;
+  // ─── 规则 & 选择 & 预览 ───
+  List<FilterRule> _rules = [];
+  Set<String> _selected = {};
+  bool _showPreview = false;
 
-  // 后缀筛选
-  bool _extFilterEnabled = false;
-  String _extValue = '';
-  bool _extNegate = false;
-
-  // 日期筛选
-  bool _dateFilterEnabled = false;
-  int _dateValue = 7;
-  bool _dateNegate = false;
-
-  // 空文件夹筛选
-  bool _emptyFilterEnabled = false;
-  bool _emptyNegate = false;
-
-  // 高级功能
-  int _threadCount = 4;
-  List<FilterRule> _savedRules = [];
-  bool _showAdvancedPanel = false;
-  bool _showDupPanel = false;
-  bool _showEmptyCleanupPanel = false;
-
-  // 重复文件检测结果
-  List<List<FileItem>> _duplicateGroups = [];
-
-  // 空文件清理结果
-  List<FileItem> _emptyFiles = [];
-  String _emptyExtFilter = '.txt,.log,.tmp';
-
-  // 全选状态
-  Set<String> _selectedPaths = {};
-
-  // ─── Getters ─────────────────────────────────────────────
+  // ─── Getters ───
   List<FileItem> get files => _filteredFiles;
+  List<FileItem> get allFiles => _files;
   String get currentPath => _currentPath;
   bool get isLoading => _isLoading;
-  String? get error => _error;
   int get totalCount => _files.length;
   int get filteredCount => _filteredFiles.length;
+  bool get nEn => _nEn; String get nOp => _nOp; String get nVal => _nVal; bool get nNeg => _nNeg;
+  bool get sEn => _sEn; String get sOp => _sOp; double get sVal => _sVal; String get sUnit => _sUnit; bool get sNeg => _sNeg;
+  bool get eEn => _eEn; String get eVal => _eVal; bool get eNeg => _eNeg;
+  bool get dEn => _dEn; String get dOp => _dOp; int get dVal => _dVal; String get dUnit => _dUnit; bool get dNeg => _dNeg;
+  bool get emEn => _emEn; bool get emNeg => _emNeg;
+  List<FilterRule> get rules => _rules;
+  Set<String> get selectedPaths => _selected;
+  List<FileItem> get filteredFiles => _filteredFiles;
+  bool get showPreview => _showPreview;
+  bool get someSelected => _selected.isNotEmpty;
+  bool get allSelected => _filteredFiles.isNotEmpty && _filteredFiles.every((f) => _selected.contains(f.path));
 
-  bool get nameFilterEnabled => _nameFilterEnabled;
-  String get nameOperator => _nameOperator;
-  String get nameValue => _nameValue;
-  bool get nameNegate => _nameNegate;
+  FileService() { _init(); }
 
-  bool get sizeFilterEnabled => _sizeFilterEnabled;
-  String get sizeOperator => _sizeOperator;
-  double get sizeValue => _sizeValue;
-  String get sizeUnit => _sizeUnit;
-  bool get sizeNegate => _sizeNegate;
-
-  bool get extFilterEnabled => _extFilterEnabled;
-  String get extValue => _extValue;
-  bool get extNegate => _extNegate;
-
-  bool get dateFilterEnabled => _dateFilterEnabled;
-  int get dateValue => _dateValue;
-  bool get dateNegate => _dateNegate;
-
-  bool get emptyFilterEnabled => _emptyFilterEnabled;
-  bool get emptyNegate => _emptyNegate;
-
-  int get threadCount => _threadCount;
-  List<FilterRule> get savedRules => _savedRules;
-  bool get showAdvancedPanel => _showAdvancedPanel;
-  bool get showDupPanel => _showDupPanel;
-  bool get showEmptyCleanupPanel => _showEmptyCleanupPanel;
-  List<List<FileItem>> get duplicateGroups => _duplicateGroups;
-  List<FileItem> get emptyFiles => _emptyFiles;
-  String get emptyExtFilter => _emptyExtFilter;
-  Set<String> get selectedPaths => _selectedPaths;
-
-  bool get allSelected =>
-      _filteredFiles.isNotEmpty &&
-      _filteredFiles.every((f) => _selectedPaths.contains(f.path));
-  bool get someSelected => _selectedPaths.isNotEmpty;
-
-  // API 基础地址
-  static String get _apiBase {
-    if (kIsWeb) return '/api';
-    return 'http://localhost:8080/api';
+  Future<void> _init() async {
+    await _loadRules();
+    notifyListeners();
   }
 
-  FileService() {
-    _loadRules();
-  }
-
-  // ─── 扫描 ───────────────────────────────────────────────
+  // ─── 扫描文件夹（dart:io 直读） ───
   Future<void> scanFolder(String path) async {
-    _isLoading = true;
-    _error = null;
-    _selectedPaths.clear();
+    _isLoading = true; _selected.clear(); _showPreview = false;
     notifyListeners();
 
     try {
-      final response = await http.post(
-        Uri.parse('$_apiBase/scan'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'path': path, 'threads': _threadCount}),
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        _files = (data['files'] as List)
-            .map((f) => FileItem.fromJson(f))
-            .toList();
-        _currentPath = path;
-        _applyFilters();
-      } else {
-        _error = '扫描失败: ${response.statusCode}';
-      }
+      final dir = Directory(path);
+      if (!await dir.exists()) throw '文件夹不存在';
+      _currentPath = path;
+      _files = await _scanDir(dir, path);
+      _apply();
     } catch (e) {
-      _error = '连接失败: $e';
+      debugPrint('扫描失败: $e');
     } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
 
-  // ─── 名称筛选 ────────────────────────────────────────────
-  void updateNameFilter(
-      {bool? enabled, String? op, String? value, bool? negate}) {
-    if (enabled != null) _nameFilterEnabled = enabled;
-    if (op != null) _nameOperator = op;
-    if (value != null) _nameValue = value;
-    if (negate != null) _nameNegate = negate;
-    _applyFilters();
-    notifyListeners();
+  Future<List<FileItem>> _scanDir(Directory dir, String root) async {
+    final results = <FileItem>[];
+    try {
+      await for (final entity in dir.list(recursive: true)) {
+        if (entity is File) {
+          final stat = await entity.stat();
+          final relPath = p.relative(entity.path, from: root);
+          results.add(FileItem(
+            name: p.basename(entity.path),
+            path: relPath.replaceAll('\\', '/'),
+            parentPath: p.dirname(relPath).replaceAll('\\', '/'),
+            size: stat.size,
+            extension: p.extension(entity.path).replaceFirst('.', ''),
+            modifiedAt: stat.modified,
+            createdAt: stat.changed,
+          ));
+        }
+      }
+    } catch (_) {}
+    return results;
   }
 
-  // ─── 大小筛选 ────────────────────────────────────────────
-  void updateSizeFilter(
-      {bool? enabled, String? op, double? value, String? unit, bool? negate}) {
-    if (enabled != null) _sizeFilterEnabled = enabled;
-    if (op != null) _sizeOperator = op;
-    if (value != null) _sizeValue = value;
-    if (unit != null) _sizeUnit = unit;
-    if (negate != null) _sizeNegate = negate;
-    _applyFilters();
-    notifyListeners();
-  }
+  // ─── 筛选更新（只存值，不立即筛选） ───
+  void updateNF({bool? en, String? op, String? val, bool? neg}) { if(en!=null)_nEn=en; if(op!=null)_nOp=op; if(val!=null)_nVal=val; if(neg!=null)_nNeg=neg; notifyListeners(); }
+  void updateSF({bool? en, String? op, double? val, String? unit, bool? neg}) { if(en!=null)_sEn=en; if(op!=null)_sOp=op; if(val!=null)_sVal=val; if(unit!=null)_sUnit=unit; if(neg!=null)_sNeg=neg; notifyListeners(); }
+  void updateEF({bool? en, String? val, bool? neg}) { if(en!=null)_eEn=en; if(val!=null)_eVal=val; if(neg!=null)_eNeg=neg; notifyListeners(); }
+  void updateDF({bool? en, String? op, int? val, String? unit, bool? neg}) { if(en!=null)_dEn=en; if(op!=null)_dOp=op; if(val!=null)_dVal=val; if(unit!=null)_dUnit=unit; if(neg!=null)_dNeg=neg; notifyListeners(); }
+  void updateEF2({bool? en, bool? neg}) { if(en!=null)_emEn=en; if(neg!=null)_emNeg=neg; notifyListeners(); }
 
-  // ─── 后缀筛选 ────────────────────────────────────────────
-  void updateExtFilter({bool? enabled, String? value, bool? negate}) {
-    if (enabled != null) _extFilterEnabled = enabled;
-    if (value != null) _extValue = value;
-    if (negate != null) _extNegate = negate;
-    _applyFilters();
-    notifyListeners();
-  }
-
-  // ─── 日期筛选 ────────────────────────────────────────────
-  void updateDateFilter({bool? enabled, int? value, bool? negate}) {
-    if (enabled != null) _dateFilterEnabled = enabled;
-    if (value != null) _dateValue = value;
-    if (negate != null) _dateNegate = negate;
-    _applyFilters();
-    notifyListeners();
-  }
-
-  // ─── 空文件夹筛选 ────────────────────────────────────────
-  void updateEmptyFilter({bool? enabled, bool? negate}) {
-    if (enabled != null) _emptyFilterEnabled = enabled;
-    if (negate != null) _emptyNegate = negate;
-    _applyFilters();
-    notifyListeners();
-  }
-
-  // ─── 应用筛选 ────────────────────────────────────────────
-  void _applyFilters() {
+  void _apply() {
     _filteredFiles = _files.where((f) {
-      // 名称筛选
-      if (_nameFilterEnabled && _nameValue.isNotEmpty) {
-        final name = f.name.toLowerCase();
-        final value = _nameValue.toLowerCase();
-        bool match;
-        switch (_nameOperator) {
-          case 'prefix':
-            match = name.startsWith(value);
-            break;
-          case 'suffix':
-            match = name.endsWith(value);
-            break;
-          default: // contains
-            match = name.contains(value);
-        }
-        if (_nameNegate) match = !match;
-        if (!match) return false;
+      if (_nEn && _nVal.isNotEmpty) {
+        final nm = f.name.toLowerCase(), v = _nVal.toLowerCase();
+        bool m = _nOp == 'prefix' ? nm.startsWith(v) : _nOp == 'suffix' ? nm.endsWith('.$v') : nm.contains(v);
+        if (_nNeg) m = !m; if (!m) return false;
       }
-
-      // 大小筛选
-      if (_sizeFilterEnabled) {
-        double sizeInUnit;
-        switch (_sizeUnit) {
-          case 'KB':
-            sizeInUnit = f.size / 1024;
-            break;
-          case 'GB':
-            sizeInUnit = f.size / (1024 * 1024 * 1024);
-            break;
-          default: // MB
-            sizeInUnit = f.size / (1024 * 1024);
-        }
-
-        bool match;
-        switch (_sizeOperator) {
-          case 'gt':
-            match = sizeInUnit > _sizeValue;
-            break;
-          case 'lt':
-            match = sizeInUnit < _sizeValue;
-            break;
-          case 'eq':
-            match = (sizeInUnit - _sizeValue).abs() < 0.001;
-            break;
-          default:
-            match = false;
-        }
-
-        if (_sizeNegate) match = !match;
-        if (!match) return false;
+      if (_sEn) {
+        double s = _sUnit == 'KB' ? f.size / 1024 : _sUnit == 'GB' ? f.size / 1073741824 : f.size / 1048576;
+        bool m = _sOp == 'gt' ? s > _sVal : _sOp == 'lt' ? s < _sVal : (s - _sVal).abs() < 0.001;
+        if (_sNeg) m = !m; if (!m) return false;
       }
-
-      // 后缀筛选
-      if (_extFilterEnabled && _extValue.isNotEmpty) {
-        final exts = _extValue
-            .split(',')
-            .map((e) => e.trim().toLowerCase().replaceAll('.', ''))
-            .toList();
-        final fileExt = f.extension.toLowerCase();
-        bool match = exts.any((ext) {
-          if (ext.contains('*')) {
-            return fileExt.contains(ext.replaceAll('*', ''));
-          }
-          return fileExt == ext;
-        });
-        if (_extNegate) match = !match;
-        if (!match) return false;
+      if (_eEn && _eVal.isNotEmpty) {
+        final exts = _eVal.split(',').map((e) => e.trim().toLowerCase()).toList();
+        bool m = exts.contains('.${f.extension.toLowerCase()}');
+        if (_eNeg) m = !m; if (!m) return false;
       }
-
-      // 日期筛选
-      if (_dateFilterEnabled) {
-        final cutoff = DateTime.now().subtract(Duration(days: _dateValue));
-        bool match = f.modifiedAt.isAfter(cutoff);
-        if (_dateNegate) match = !match;
-        if (!match) return false;
+      if (_dEn) {
+        final cutoff = _dUnit == 'hour' ? DateTime.now().subtract(Duration(hours: _dVal))
+            : _dUnit == 'month' ? DateTime.now().subtract(Duration(days: _dVal * 30))
+            : DateTime.now().subtract(Duration(days: _dVal));
+        bool m = _dOp == 'lt' ? f.modifiedAt.isAfter(cutoff) : f.modifiedAt.isBefore(cutoff);
+        if (_dNeg) m = !m; if (!m) return false;
       }
-
-      // 空文件夹筛选
-      if (_emptyFilterEnabled) {
-        bool match = f.isDirectory;
-        if (_emptyNegate) match = !match;
-        if (!match) return false;
+      if (_emEn) {
+        final dir = p.dirname(f.path);
+        final sibs = _files.where((o) => p.dirname(o.path) == dir);
+        bool m = sibs.every((o) => o.size == 0);
+        if (_emNeg) m = !m; if (!m) return false;
       }
-
       return true;
     }).toList();
-  }
-
-  // ─── 选择操作 ────────────────────────────────────────────
-  void toggleSelect(String path) {
-    if (_selectedPaths.contains(path)) {
-      _selectedPaths.remove(path);
-    } else {
-      _selectedPaths.add(path);
-    }
     notifyListeners();
   }
 
-  void toggleSelectAll() {
-    if (allSelected) {
-      _selectedPaths.clear();
-    } else {
-      _selectedPaths = _filteredFiles.map((f) => f.path).toSet();
+  // ─── 选择 ───
+  void toggleSelect(String path) { _selected.contains(path) ? _selected.remove(path) : _selected.add(path); notifyListeners(); }
+  void toggleSelectAll() { if (allSelected) _selected.clear(); else _selected = _filteredFiles.map((f) => f.path).toSet(); notifyListeners(); }
+  void clearSelect() { _selected.clear(); notifyListeners(); }
+
+  // ─── 删除（真正删硬盘文件） ───
+  Future<int> deleteFiles(List<String> paths) async {
+    int cnt = 0;
+    for (final rp in paths) {
+      final full = p.join(_currentPath, rp);
+      final f = File(full);
+      if (await f.exists()) { await f.delete(); cnt++; }
     }
-    notifyListeners();
+    _selected.clear();
+    await scanFolder(_currentPath);
+    _apply(); _showPreview = true;
+    return cnt;
   }
 
-  void clearSelection() {
-    _selectedPaths.clear();
-    notifyListeners();
-  }
-
-  // ─── 删除 ────────────────────────────────────────────────
-  Future<void> deleteFiles(List<String> paths) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$_apiBase/delete'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'paths': paths}),
-      );
-
-      if (response.statusCode == 200) {
-        _selectedPaths.clear();
-        await scanFolder(_currentPath);
-      } else {
-        _error = '删除失败: ${response.statusCode}';
-        notifyListeners();
-      }
-    } catch (e) {
-      _error = '删除失败: $e';
-      notifyListeners();
-    }
-  }
-
-  // ─── 解散文件夹 ──────────────────────────────────────────
-  Future<void> dissolveFolder(String path, int keepLevels) async {
-    try {
-      final response = await http.post(
-        Uri.parse('$_apiBase/dissolve'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'path': path, 'keepLevels': keepLevels}),
-      );
-
-      if (response.statusCode == 200) {
-        await scanFolder(_currentPath);
-      } else {
-        _error = '解散失败: ${response.statusCode}';
-        notifyListeners();
-      }
-    } catch (e) {
-      _error = '解散失败: $e';
-      notifyListeners();
-    }
-  }
-
-  // ─── 重复文件检测 ────────────────────────────────────────
-  void detectDuplicates() {
-    final Map<String, List<FileItem>> groups = {};
+  // ─── 解散文件夹 ───
+  Map<String, String> previewDissolve(int keepLevels) {
+    final result = <String, String>{};
+    final occupied = <String>{};
+    // 先登记所有不会被移动的文件（已在目标层级），防止解散后覆盖已有文件
     for (final f in _files) {
-      if (f.isDirectory) continue;
-      final key = f.duplicateKey;
-      groups.putIfAbsent(key, () => []).add(f);
+      if (f.path.split('/').length <= keepLevels + 1) {
+        occupied.add(f.path);
+      }
     }
-    _duplicateGroups = groups.values
-        .where((g) => g.length > 1)
-        .toList()
-      ..sort((a, b) =>
-          (b[0].size * b.length).compareTo(a[0].size * a.length));
-    _showDupPanel = true;
-    notifyListeners();
+    for (final f in _files) {
+      final parts = f.path.split('/');
+      if (parts.length <= keepLevels + 1) continue;
+      final keep = parts.sublist(0, keepLevels);
+      final baseName = parts.last;
+      final baseDir = keep.isEmpty ? '.' : keep.join('/');
+      String candidate = baseDir == '.' ? baseName : '$baseDir/$baseName';
+      // 冲突处理：目标路径已被占用（已有文件 或 之前安排的文件）
+      if (occupied.contains(candidate)) {
+        final ext = p.extension(baseName);
+        final stem = p.basenameWithoutExtension(baseName);
+        int counter = 1;
+        do {
+          candidate = baseDir == '.' ? '${stem}_$counter$ext' : '$baseDir/${stem}_$counter$ext';
+          counter++;
+        } while (occupied.contains(candidate));
+      }
+      if (candidate != f.path) {
+        occupied.add(candidate);
+        result[f.path] = candidate;
+      }
+    }
+    return result;
   }
 
-  // ─── 空文件扫描 ──────────────────────────────────────────
-  void scanEmptyFiles() {
-    final exts = _emptyExtFilter
-        .split(',')
-        .map((e) => e.trim().toLowerCase().replaceAll('.', ''))
-        .toList();
-    _emptyFiles = _files.where((f) {
-      if (f.size != 0) return false;
-      if (f.isDirectory) return false;
-      final fileExt = f.extension.toLowerCase();
-      return exts.any((ext) {
-        if (ext.contains('*')) {
-          return fileExt.contains(ext.replaceAll('*', ''));
+  Future<void> dissolveFolder(int keepLevels) async {
+    if (_currentPath.isEmpty || _files.isEmpty) return;
+    final toMove = previewDissolve(keepLevels);
+    if (toMove.isEmpty) return;
+    // 记录哪些源目录会有文件被移走
+    final sourceDirs = <String>{};
+    for (final entry in toMove.entries) {
+      final src = File(p.join(_currentPath, entry.key));
+      final dst = File(p.join(_currentPath, entry.value));
+      if (await src.exists()) {
+        await dst.parent.create(recursive: true);
+        await src.rename(dst.path);
+        sourceDirs.add(p.dirname(entry.key));
+      }
+    }
+    // 清理变空的源目录
+    await _cleanEmptyDirs();
+    await scanFolder(_currentPath);
+  }
+
+  /// 扫描空文件夹
+  Future<List<String>> findEmptyDirs() async {
+    if (_currentPath.isEmpty) return [];
+    final empty = <String>[];
+    final base = Directory(_currentPath);
+    if (!await base.exists()) return empty;
+    await for (final entity in base.list(recursive: true)) {
+      if (entity is Directory) {
+        final list = entity.listSync();
+        if (list.isEmpty) {
+          empty.add(p.relative(entity.path, from: _currentPath).replaceAll('\\', '/'));
         }
-        return fileExt == ext;
-      });
-    }).toList();
-    _showEmptyCleanupPanel = true;
-    notifyListeners();
-  }
-
-  void updateEmptyExtFilter(String value) {
-    _emptyExtFilter = value;
-    notifyListeners();
-  }
-
-  // ─── 高级面板 ────────────────────────────────────────────
-  void toggleAdvancedPanel() {
-    _showAdvancedPanel = !_showAdvancedPanel;
-    notifyListeners();
-  }
-
-  void toggleDupPanel() {
-    _showDupPanel = !_showDupPanel;
-    notifyListeners();
-  }
-
-  void toggleEmptyCleanupPanel() {
-    _showEmptyCleanupPanel = !_showEmptyCleanupPanel;
-    notifyListeners();
-  }
-
-  // ─── 线程数 ──────────────────────────────────────────────
-  void updateThreadCount(int count) {
-    _threadCount = count.clamp(1, 32);
-    notifyListeners();
-  }
-
-  // ─── 规则管理 ────────────────────────────────────────────
-  FilterRule getCurrentRuleState({String name = ''}) {
-    return FilterRule(
-      name: name,
-      nameFilterEnabled: _nameFilterEnabled,
-      nameOperator: _nameOperator,
-      nameValue: _nameValue,
-      nameNegate: _nameNegate,
-      sizeFilterEnabled: _sizeFilterEnabled,
-      sizeOperator: _sizeOperator,
-      sizeValue: _sizeValue,
-      sizeUnit: _sizeUnit,
-      sizeNegate: _sizeNegate,
-      extFilterEnabled: _extFilterEnabled,
-      extValue: _extValue,
-      extNegate: _extNegate,
-      dateFilterEnabled: _dateFilterEnabled,
-      dateValue: _dateValue,
-      dateNegate: _dateNegate,
-      emptyFilterEnabled: _emptyFilterEnabled,
-      emptyNegate: _emptyNegate,
-    );
-  }
-
-  void applyRule(FilterRule rule) {
-    _nameFilterEnabled = rule.nameFilterEnabled;
-    _nameOperator = rule.nameOperator;
-    _nameValue = rule.nameValue;
-    _nameNegate = rule.nameNegate;
-    _sizeFilterEnabled = rule.sizeFilterEnabled;
-    _sizeOperator = rule.sizeOperator;
-    _sizeValue = rule.sizeValue;
-    _sizeUnit = rule.sizeUnit;
-    _sizeNegate = rule.sizeNegate;
-    _extFilterEnabled = rule.extFilterEnabled;
-    _extValue = rule.extValue;
-    _extNegate = rule.extNegate;
-    _dateFilterEnabled = rule.dateFilterEnabled;
-    _dateValue = rule.dateValue;
-    _dateNegate = rule.dateNegate;
-    _emptyFilterEnabled = rule.emptyFilterEnabled;
-    _emptyNegate = rule.emptyNegate;
-    _applyFilters();
-    notifyListeners();
-  }
-
-  Future<void> saveRule(String name) async {
-    final rule = getCurrentRuleState(name: name);
-    _savedRules.add(rule);
-    await _persistRules();
-    notifyListeners();
-  }
-
-  Future<void> deleteRule(int index) async {
-    if (index >= 0 && index < _savedRules.length) {
-      _savedRules.removeAt(index);
-      await _persistRules();
-      notifyListeners();
+      }
     }
+    empty.sort();
+    return empty;
   }
+
+  /// 删除指定空文件夹
+  Future<int> deleteEmptyDirs(List<String> dirs) async {
+    int cnt = 0;
+    // 按路径深度倒序删除（深的先删）
+    dirs.sort((a, b) => b.split('/').length.compareTo(a.split('/').length));
+    for (final d in dirs) {
+      final dir = Directory(p.join(_currentPath, d));
+      if (await dir.exists()) {
+        try { await dir.delete(); cnt++; } catch (_) {}
+      }
+    }
+    await scanFolder(_currentPath);
+    return cnt;
+  }
+
+  /// 清理所有空目录
+  Future<void> _cleanEmptyDirs() async {
+    final empty = await findEmptyDirs();
+    if (empty.isNotEmpty) await deleteEmptyDirs(empty);
+  }
+
+  // 是否有解散操作可用
+  bool get canDissolve => _currentPath.isNotEmpty && _files.any((f) => f.path.split('/').length > 2);
+
+  // ─── 预览（点击时重扫+筛选） ───
+  void openPreview() { _apply(); _showPreview = true; notifyListeners(); }
+  void closePreview() { _showPreview = false; notifyListeners(); }
+  Future<void> togglePreview() async {
+    if (!_showPreview && _currentPath.isNotEmpty) {
+      final dir = Directory(_currentPath);
+      if (await dir.exists()) {
+        _isLoading = true; notifyListeners();
+        _files = await _scanDir(dir, _currentPath);
+        _isLoading = false;
+      }
+    }
+    _apply();
+    _showPreview = !_showPreview;
+    notifyListeners();
+  }
+  void togglePvSelect(String path) { _selected.contains(path) ? _selected.remove(path) : _selected.add(path); notifyListeners(); }
+
+  // ─── 规则 ───
+  FilterRule currentState(String name) => FilterRule(name: name, nEn: _nEn, nOp: _nOp, nVal: _nVal, nNeg: _nNeg, sEn: _sEn, sOp: _sOp, sVal: _sVal, sUnit: _sUnit, sNeg: _sNeg, eEn: _eEn, eVal: _eVal, eNeg: _eNeg, dEn: _dEn, dOp: _dOp, dVal: _dVal, dUnit: _dUnit, dNeg: _dNeg, emEn: _emEn, emNeg: _emNeg);
+  void applyRule(FilterRule r) { _nEn=r.nEn;_nOp=r.nOp;_nVal=r.nVal;_nNeg=r.nNeg; _sEn=r.sEn;_sOp=r.sOp;_sVal=r.sVal;_sUnit=r.sUnit;_sNeg=r.sNeg; _eEn=r.eEn;_eVal=r.eVal;_eNeg=r.eNeg; _dEn=r.dEn;_dOp=r.dOp;_dVal=r.dVal;_dUnit=r.dUnit;_dNeg=r.dNeg; _emEn=r.emEn;_emNeg=r.emNeg; _apply(); }
+  Future<bool> saveRule(String name) async {
+    final idx = _rules.indexWhere((r) => r.name == name);
+    if (idx >= 0) {
+      _rules[idx] = currentState(name); // 同名覆盖
+    } else {
+      if (_rules.length >= 5) return false; // 已达上限
+      _rules.add(currentState(name));
+    }
+    await _persist(); notifyListeners();
+    return true;
+  }
+  Future<void> deleteRule(int i) async { _rules.removeAt(i); await _persist(); notifyListeners(); }
 
   Future<void> _loadRules() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final json = prefs.getString('filepulse_rules');
-      if (json != null) {
-        final list = jsonDecode(json) as List;
-        _savedRules = list.map((r) => FilterRule.fromJson(r)).toList();
-        notifyListeners();
-      }
+      final p = await SharedPreferences.getInstance();
+      final j = p.getString('fp_rules');
+      if (j != null) _rules = (jsonDecode(j) as List).map((r) => FilterRule.fromJson(r)).toList();
+      debugPrint('已加载 ${_rules.length} 条配置');
     } catch (e) {
-      debugPrint('加载规则失败: $e');
+      debugPrint('配置加载失败: $e');
     }
   }
-
-  Future<void> _persistRules() async {
-    final prefs = await SharedPreferences.getInstance();
-    final json = jsonEncode(_savedRules.map((r) => r.toJson()).toList());
-    await prefs.setString('filepulse_rules', json);
+  Future<void> _persist() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.setString('fp_rules', jsonEncode(_rules.map((r) => r.toJson()).toList()));
+      debugPrint('已保存 ${_rules.length} 条配置');
+    } catch (e) {
+      debugPrint('配置保存失败: $e');
+    }
   }
 }

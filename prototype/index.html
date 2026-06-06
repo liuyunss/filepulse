@@ -3,167 +3,120 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>文件脉搏 FilePulse</title>
+    <title>FilePulse</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <!-- 顶部：文件夹选择 -->
-    <div id="folder-select">
-        <div id="drop-zone">拖入文件夹到这里，或点击选择</div>
-        <input type="file" id="folder-input" webkitdirectory>
-        <div id="current-path">当前路径：未选择</div>
+<div id="app">
+    <!-- ── 顶栏 ── -->
+    <header>
+        <h1>FilePulse <span class="subtitle">文件脉搏</span></h1>
+        <div id="drop-zone">
+            <div class="drop-icon">📁</div>
+            <div>拖入文件夹 或 <button id="btn-browse" class="link-btn">点击浏览</button></div>
+        </div>
+        <div class="header-meta">
+            <span id="current-path">演示数据 — C:\Users\Docs\Project</span>
+            <span id="file-count">12 个文件</span>
+        </div>
+        <input type="file" id="folder-input" webkitdirectory hidden>
+    </header>
+
+    <div id="body-wrap">
+        <!-- ── 左侧栏 ── -->
+        <aside id="sidebar">
+            <div class="side-section">
+                <h3>🔍 筛选条件</h3>
+                <div id="filters">
+                    <label class="filter-row">
+                        <input type="checkbox" id="name-filter"> 名称
+                        <select id="name-op" style="width:46px"><option value="contains">包含</option><option value="prefix">前缀</option><option value="suffix">后缀</option></select>
+                        <input type="text" id="name-value" placeholder="关键词" style="width:56px">
+                        <label class="negate"><input type="checkbox" id="name-negate"> 取反</label>
+                    </label>
+                    <label class="filter-row">
+                        <input type="checkbox" id="ext-filter"> 后缀
+                        <input type="text" id="ext-value" placeholder=".mp4" style="width:104px">
+                        <label class="negate"><input type="checkbox" id="ext-negate"> 取反</label>
+                    </label>
+                    <label class="filter-row">
+                        <input type="checkbox" id="size-filter"> 大小
+                        <select id="size-op" style="width:36px"><option value="gt">&gt;</option><option value="lt">&lt;</option><option value="eq">=</option></select>
+                        <input type="number" id="size-value" value="10" style="width:40px">
+                        <select id="size-unit" style="width:40px"><option value="MB">MB</option><option value="KB">KB</option><option value="GB">GB</option></select>
+                        <label class="negate"><input type="checkbox" id="size-negate"> 取反</label>
+                    </label>
+                    <label class="filter-row">
+                        <input type="checkbox" id="date-filter"> 日期
+                        <select id="date-op" style="width:46px"><option value="lt">最近</option><option value="gt">早于</option></select>
+                        <input type="number" id="date-value" value="7" style="width:32px">
+                        <select id="date-unit" style="width:36px"><option value="hour">时</option><option value="day" selected>天</option><option value="month">月</option></select>
+                        <label class="negate"><input type="checkbox" id="date-negate"> 取反</label>
+                    </label>
+                    <label class="filter-row">
+                        <input type="checkbox" id="empty-filter"> 空文件夹
+                        <label class="negate"><input type="checkbox" id="empty-negate"> 取反</label>
+                    </label>
+                </div>
+            </div>
+
+            <div class="side-section">
+                <h3>💾 保存配置</h3>
+                <div class="save-row">
+                    <input type="text" id="rule-name" placeholder="输入配置名称">
+                    <button id="btn-save-rule">保存</button>
+                </div>
+                <div id="rules-list"></div>
+            </div>
+
+            <div class="side-section">
+                <h3>🛠 工具</h3>
+                <div style="display:flex;align-items:center;gap:4px">
+                    <button id="btn-dissolve" style="flex:1">解散(保留 <input type="number" id="keep-levels" value="1" min="0" max="5" style="width:36px"> 级)</button>
+                    <span style="padding:3px 8px;font-size:13px;color:var(--text3);cursor:help;border:1px solid var(--border);border-radius:3px;background:#F7F8FA"
+                        title="保留0级：a/b/1.txt  →  根目录/1.txt（b文件夹消失）
+保留1级：a/b/c/1.txt  →  a/1.txt（b、c文件夹消失）
+保留2级：a/b/c/1.txt  →  a/b/1.txt（仅c文件夹消失）">?</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- ── 右侧主内容 ── -->
+        <main id="main-content">
+            <div id="table-wrap">
+                <table id="file-table">
+                    <thead><tr>
+                        <th class="col-chk"><input type="checkbox" id="select-all" title="全选"></th>
+                        <th class="col-path sortable" data-sort="path">
+                            <span class="th-label">路径</span>
+                            <button class="sort-btn" data-sort="path">▲</button>
+                        </th>
+                        <th class="col-size sortable" data-sort="size">
+                            <span class="th-label">大小</span>
+                            <button class="sort-btn" data-sort="size">▲</button>
+                        </th>
+                        <th class="col-type sortable" data-sort="extension">
+                            <span class="th-label">类型</span>
+                            <button class="sort-btn" data-sort="extension">▲</button>
+                        </th>
+                        <th class="col-date sortable" data-sort="modified">
+                            <span class="th-label">修改时间</span>
+                            <button class="sort-btn" data-sort="modified">▲</button>
+                        </th>
+                        <th class="col-action">操作</th>
+                    </tr></thead>
+                    <tbody id="file-tbody"></tbody>
+                </table>
+            </div>
+
+            <div class="action-bar">
+                <button id="btn-preview">▶ 预览匹配</button>
+                <button id="btn-delete" class="danger-btn">✕ 删除选中</button>
+                <span id="status-text">就绪</span>
+            </div>
+        </main>
     </div>
-    
-    <!-- 中间：筛选条件 -->
-    <div id="filters">
-        <label>
-            <input type="checkbox" id="name-filter">
-            名称
-            <select id="name-op">
-                <option value="contains">包含</option>
-                <option value="prefix">前缀</option>
-                <option value="suffix">后缀</option>
-            </select>
-            <input type="text" id="name-value" placeholder="关键词">
-            <input type="checkbox" id="name-negate"> 取反
-        </label>
-        
-        <label>
-            <input type="checkbox" id="size-filter">
-            <select id="size-op">
-                <option value="gt">大于</option>
-                <option value="lt">小于</option>
-                <option value="eq">等于</option>
-            </select>
-            <input type="number" id="size-value" value="10">
-            <select id="size-unit">
-                <option value="MB">MB</option>
-                <option value="KB">KB</option>
-                <option value="GB">GB</option>
-            </select>
-            <input type="checkbox" id="size-negate"> 取反
-        </label>
-        
-        <label>
-            <input type="checkbox" id="ext-filter">
-            后缀等于 <input type="text" id="ext-value" placeholder=".mp4,.avi">
-            <input type="checkbox" id="ext-negate"> 取反
-        </label>
-        
-        <label>
-            <input type="checkbox" id="date-filter">
-            修改日期在 <input type="number" id="date-value" value="7"> 天内
-            <input type="checkbox" id="date-negate"> 取反
-        </label>
-        
-        <label>
-            <input type="checkbox" id="empty-filter">
-            空文件夹
-            <input type="checkbox" id="empty-negate"> 取反
-        </label>
-    </div>
-    
-    <!-- 底部：文件列表 -->
-    <div id="file-list">
-        <table>
-            <thead>
-                <tr>
-                    <th><input type="checkbox" id="select-all"></th>
-                    <th>文件名</th>
-                    <th>大小</th>
-                    <th>类型</th>
-                    <th>修改时间</th>
-                    <th>路径</th>
-                </tr>
-            </thead>
-            <tbody id="file-tbody"></tbody>
-        </table>
-    </div>
-    
-    <!-- 操作按钮 -->
-    <div id="actions">
-        <button id="btn-scan">扫描</button>
-        <button id="btn-preview">预览</button>
-        <button id="btn-advanced">高级 ▼</button>
-        <button id="btn-delete">删除</button>
-    </div>
-    
-    <!-- 高级面板 -->
-    <div id="advanced-panel" style="display:none">
-        <!-- 功能入口按钮 -->
-        <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-            <button id="btn-dup-detect">重复检测</button>
-            <button id="btn-empty-cleanup">空文件清理</button>
-        </div>
-        
-        <!-- 扫描线程数 -->
-        <div style="margin-bottom: 15px; padding: 12px; background: #f8f9fa; border-radius: 5px;">
-            <label style="display: inline-flex; align-items: center; gap: 8px;">
-                扫描线程数
-                <input type="number" id="thread-count" min="1" max="32" value="" style="width: 60px; padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px;">
-                <span id="thread-hint" style="color: #999; font-size: 12px;"></span>
-            </label>
-        </div>
-        
-        <!-- 重复文件检测 -->
-        <div id="dup-detect-section" style="display:none; padding: 15px; background: #f0f4ff; border: 1px solid #b3c6ff; border-radius: 5px; margin-bottom: 15px;">
-            <div style="margin-bottom: 10px;">
-                <strong>重复文件检测</strong> - 按文件名+大小查找重复项
-            </div>
-            <div style="margin-bottom: 10px;">
-                <button id="btn-scan-dup">开始检测</button>
-                <button id="btn-delete-dup-selected" disabled style="background:#dc3545;color:white;">删除选中</button>
-                <button id="btn-close-dup">关闭</button>
-            </div>
-            <div id="dup-detect-summary" style="margin-bottom: 8px; color: #666;"></div>
-            <div id="dup-detect-results" style="max-height: 400px; overflow-y: auto;"></div>
-        </div>
-        
-        <!-- 空文件清理 -->
-        <div id="empty-cleanup-section" style="display:none; padding: 15px; background: #fff8f0; border: 1px solid #ffcc80; border-radius: 5px; margin-bottom: 15px;">
-            <div style="margin-bottom: 10px;">
-                <strong>空文件清理</strong> - 找出0KB文件并清理
-            </div>
-            <div style="margin-bottom: 10px;">
-                <label>指定后缀（逗号分隔）：</label>
-                <input type="text" id="empty-ext-value" placeholder=".txt,.log,.tmp" value=".txt,.log,.tmp">
-            </div>
-            <div style="margin-bottom: 10px;">
-                <button id="btn-scan-empty">扫描空文件</button>
-                <button id="btn-delete-empty" disabled style="background:#dc3545;color:white;">删除选中</button>
-                <button id="btn-close-empty-cleanup">关闭</button>
-            </div>
-            <div id="empty-cleanup-preview" style="display:none;">
-                <div style="margin-bottom: 5px; color: #666;" id="empty-cleanup-count"></div>
-                <div id="empty-cleanup-list" style="max-height: 300px; overflow-y: auto;"></div>
-            </div>
-        </div>
-        
-        <!-- 解散文件夹 -->
-        <div id="dissolve-section">
-            解散文件夹 - 保留 
-            <select id="keep-levels">
-                <option value="0">0</option>
-                <option value="1" selected>1</option>
-                <option value="2">2</option>
-                <option value="3">3</option>
-            </select> 级
-            <button id="btn-preview-dissolve">预览解散</button>
-            <button id="btn-execute-dissolve">执行解散</button>
-        </div>
-        
-        <div id="dissolve-preview" style="display:none"></div>
-        
-        <!-- 已保存的规则 -->
-        <div id="rules-section">
-            <div>已保存的规则：</div>
-            <div id="rules-list"></div>
-            <button id="btn-execute-rule">执行选中规则</button>
-            <button id="btn-save-rule">保存当前条件为规则</button>
-            <button id="btn-delete-rule">删除规则</button>
-        </div>
-    </div>
-    
-    <script src="app.js"></script>
+</div>
+<script src="app.js"></script>
 </body>
 </html>
