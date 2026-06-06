@@ -17,6 +17,18 @@
     <!-- 中间：筛选条件 -->
     <div id="filters">
         <label>
+            <input type="checkbox" id="name-filter">
+            名称
+            <select id="name-op">
+                <option value="contains">包含</option>
+                <option value="prefix">前缀</option>
+                <option value="suffix">后缀</option>
+            </select>
+            <input type="text" id="name-value" placeholder="关键词">
+            <input type="checkbox" id="name-negate"> 取反
+        </label>
+        
+        <label>
             <input type="checkbox" id="size-filter">
             <select id="size-op">
                 <option value="gt">大于</option>
@@ -72,14 +84,43 @@
     <div id="actions">
         <button id="btn-scan">扫描</button>
         <button id="btn-preview">预览</button>
-        <button id="btn-delete">删除</button>
-        <button id="btn-empty-cleanup">空文件清理</button>
         <button id="btn-advanced">高级 ▼</button>
+        <button id="btn-delete">删除</button>
     </div>
     
     <!-- 高级面板 -->
     <div id="advanced-panel" style="display:none">
-        <div id="empty-cleanup-section" style="display:none; padding: 15px; background: #fff8f0; border: 1px solid #ffcc80; border-radius: 5px; margin: 10px 0;">
+        <!-- 功能入口按钮 -->
+        <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+            <button id="btn-dup-detect">重复检测</button>
+            <button id="btn-empty-cleanup">空文件清理</button>
+        </div>
+        
+        <!-- 扫描线程数 -->
+        <div style="margin-bottom: 15px; padding: 12px; background: #f8f9fa; border-radius: 5px;">
+            <label style="display: inline-flex; align-items: center; gap: 8px;">
+                扫描线程数
+                <input type="number" id="thread-count" min="1" max="32" value="" style="width: 60px; padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px;">
+                <span id="thread-hint" style="color: #999; font-size: 12px;"></span>
+            </label>
+        </div>
+        
+        <!-- 重复文件检测 -->
+        <div id="dup-detect-section" style="display:none; padding: 15px; background: #f0f4ff; border: 1px solid #b3c6ff; border-radius: 5px; margin-bottom: 15px;">
+            <div style="margin-bottom: 10px;">
+                <strong>重复文件检测</strong> - 按文件名+大小查找重复项
+            </div>
+            <div style="margin-bottom: 10px;">
+                <button id="btn-scan-dup">开始检测</button>
+                <button id="btn-delete-dup-selected" disabled style="background:#dc3545;color:white;">删除选中</button>
+                <button id="btn-close-dup">关闭</button>
+            </div>
+            <div id="dup-detect-summary" style="margin-bottom: 8px; color: #666;"></div>
+            <div id="dup-detect-results" style="max-height: 400px; overflow-y: auto;"></div>
+        </div>
+        
+        <!-- 空文件清理 -->
+        <div id="empty-cleanup-section" style="display:none; padding: 15px; background: #fff8f0; border: 1px solid #ffcc80; border-radius: 5px; margin-bottom: 15px;">
             <div style="margin-bottom: 10px;">
                 <strong>空文件清理</strong> - 找出0KB文件并清理
             </div>
@@ -89,7 +130,7 @@
             </div>
             <div style="margin-bottom: 10px;">
                 <button id="btn-scan-empty">扫描空文件</button>
-                <button id="btn-delete-empty" disabled>删除选中</button>
+                <button id="btn-delete-empty" disabled style="background:#dc3545;color:white;">删除选中</button>
                 <button id="btn-close-empty-cleanup">关闭</button>
             </div>
             <div id="empty-cleanup-preview" style="display:none;">
@@ -98,6 +139,7 @@
             </div>
         </div>
         
+        <!-- 解散文件夹 -->
         <div id="dissolve-section">
             解散文件夹 - 保留 
             <select id="keep-levels">
@@ -112,6 +154,7 @@
         
         <div id="dissolve-preview" style="display:none"></div>
         
+        <!-- 已保存的规则 -->
         <div id="rules-section">
             <div>已保存的规则：</div>
             <div id="rules-list"></div>

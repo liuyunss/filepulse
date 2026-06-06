@@ -72,6 +72,20 @@ function formatSize(bytes) {
 // 筛选文件
 function filterFiles() {
     return currentFiles.filter(f => {
+        // 名称筛选
+        if (document.getElementById('name-filter').checked) {
+            const op = document.getElementById('name-op').value;
+            const value = document.getElementById('name-value').value.trim().toLowerCase();
+            if (!value) return true;
+            const name = f.name.toLowerCase();
+            let match = false;
+            if (op === 'contains') match = name.includes(value);
+            if (op === 'prefix') match = name.startsWith(value);
+            if (op === 'suffix') match = name.endsWith(value);
+            if (document.getElementById('name-negate').checked) match = !match;
+            if (!match) return false;
+        }
+        
         // 大小筛选
         if (document.getElementById('size-filter').checked) {
             const op = document.getElementById('size-op').value;
@@ -97,13 +111,10 @@ function filterFiles() {
             const fileExt = '.' + f.type.toLowerCase();
             let match = exts.some(ext => {
                 if (ext.includes('*')) {
-                    const regexPattern = ext.split('*').map(part => part.replace(/[.+?^${}()|[\]\\]/g, '\\$1')).join('.*');
-                    const regex = new RegExp('^' + regexPattern + '$');
-                    return regex.test(fileExt);
+                    return fileExt.includes(ext.replace('*', ''));
                 }
                 return fileExt === ext;
             });
-            
             if (document.getElementById('ext-negate').checked) match = !match;
             if (!match) return false;
         }
@@ -111,234 +122,251 @@ function filterFiles() {
         // 日期筛选
         if (document.getElementById('date-filter').checked) {
             const days = parseInt(document.getElementById('date-value').value);
+            if (isNaN(days)) return true;
             const cutoff = new Date();
             cutoff.setDate(cutoff.getDate() - days);
             let match = f.lastModified >= cutoff;
-            
             if (document.getElementById('date-negate').checked) match = !match;
             if (!match) return false;
         }
         
-        // 空文件夹筛选（文件所在文件夹的所有文件均为0字节）
+        // 空文件夹筛选
         if (document.getElementById('empty-filter').checked) {
-            const folderPath = f.path.split('/').slice(0, -1).join('/');
-            const siblingFiles = currentFiles.filter(sf => {
-                const sfFolder = sf.path.split('/').slice(0, -1).join('/');
-                return sfFolder === folderPath;
-            });
-            const match = siblingFiles.length > 0 && siblingFiles.every(sf => sf.size === 0);
-            
-            if (document.getElementById('empty-negate').checked) {
-                if (match) return false;
-            } else {
-                if (!match) return false;
-            }
+            const isDir = f.type === '';
+            let match = isDir;
+            if (document.getElementById('empty-negate').checked) match = !match;
+            if (!match) return false;
         }
         
         return true;
     });
 }
 
-// 预览（高亮）
-function previewFiles() {
-    const filtered = filterFiles();
-    const filteredPaths = new Set(filtered.map(f => f.path));
-    const rows = document.querySelectorAll('#file-tbody tr');
-    rows.forEach(row => {
-        const path = row.dataset.path;
-        if (filteredPaths.has(path)) {
-            row.style.backgroundColor = '#ffcccc';
-        } else {
-            row.style.backgroundColor = '';
-        }
+// 重复文件检测
+function findDuplicates(files) {
+    // 按文件名+大小分组
+    const groups = {};
+    files.forEach(f => {
+        const key = f.name + '|' + f.size;
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(f);
     });
+    // 只返回有2个以上成员的组，按组内文件总大小降序
+    return Object.entries(groups)
+        .filter(([, items]) => items.length > 1)
+        .sort((a, b) => (b[1][0].size * b[1].length) - (a[1][0].size * a[1].length));
 }
 
-// 删除文件
-function deleteFiles() {
-    const selected = Array.from(document.querySelectorAll('.file-checkbox:checked'))
-        .map(cb => cb.dataset.path);
-    
-    if (selected.length === 0) {
-        alert('请先选择要删除的文件');
+function renderDuplicates(groups) {
+    const container = document.getElementById('dup-detect-results');
+    const summary = document.getElementById('dup-detect-summary');
+    if (groups.length === 0) {
+        container.innerHTML = '';
+        summary.textContent = '未发现重复文件';
+        document.getElementById('btn-delete-dup-selected').disabled = true;
         return;
     }
-    
-    if (confirm(`确定删除以下 ${selected.length} 个文件？\n\n${selected.join('\n')}`)) {
-        // 模拟删除
-        currentFiles = currentFiles.filter(f => !selected.includes(f.path));
-        renderFileList(currentFiles);
-        alert('删除成功');
-    }
+    let totalDupFiles = 0, totalDupSize = 0;
+    groups.forEach(([, items]) => {
+        totalDupFiles += items.length;
+        totalDupSize += items[0].size * (items.length - 1);
+    });
+    summary.textContent = `发现 ${groups.length} 组重复文件，共 ${totalDupFiles} 个文件，可释放约 ${formatSize(totalDupSize)} 空间`;
+
+    container.innerHTML = groups.map(([key, items], gi) => {
+        const name = items[0].name;
+        const size = items[0].size;
+        const rows = items.map((f, fi) => `
+            <div class="dup-file-row">
+                <input type="checkbox" class="dup-checkbox" data-group="${gi}" data-index="${fi}" ${fi > 0 ? 'checked' : ''}>
+                <div class="dup-file-info">
+                    <span class="name">${escapeHtml(f.name)}</span>
+                    <span class="path">${escapeHtml(f.path)}</span>
+                </div>
+                <div class="dup-file-size">${formatSize(f.size)}</div>
+            </div>
+        `).join('');
+        return `
+            <div class="dup-group">
+                <div class="dup-group-header" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
+                    <span>${escapeHtml(name)} × ${items.length} (${formatSize(size)})</span>
+                    <span class="select-all-group">
+                        <input type="checkbox" class="dup-group-toggle" data-group="${gi}" checked> 全选反选
+                    </span>
+                </div>
+                <div class="dup-group-body">${rows}</div>
+            </div>
+        `;
+    }).join('');
+
+    // 组全选反选
+    container.querySelectorAll('.dup-group-toggle').forEach(toggle => {
+        toggle.addEventListener('change', e => {
+            const gi = e.target.dataset.group;
+            container.querySelectorAll(`.dup-checkbox[data-group="${gi}"]`).forEach(cb => cb.checked = e.target.checked);
+        });
+    });
+
+    // checkbox变化时更新按钮状态
+    container.querySelectorAll('.dup-checkbox').forEach(cb => {
+        cb.addEventListener('change', updateDupDeleteBtn);
+    });
+    updateDupDeleteBtn();
 }
 
-// 解散文件夹预览
-// 空文件清理
-let emptyFiles = [];
+function updateDupDeleteBtn() {
+    const anyChecked = document.querySelectorAll('.dup-checkbox:checked').length > 0;
+    document.getElementById('btn-delete-dup-selected').disabled = !anyChecked;
+}
 
+function deleteDupSelected() {
+    const checked = document.querySelectorAll('.dup-checkbox:checked');
+    if (checked.length === 0) return;
+    const paths = Array.from(checked).map(cb => {
+        const gi = parseInt(cb.dataset.group);
+        const fi = parseInt(cb.dataset.index);
+        return dupGroups[gi][1][fi].path;
+    });
+    alert('将删除以下 ' + paths.length + ' 个重复文件：\n' + paths.join('\n'));
+}
+
+// 全局缓存检测结果
+let dupGroups = [];
+
+// 空文件扫描
 function scanEmptyFiles() {
+    if (currentFiles.length === 0) { alert('请先扫描文件夹'); return; }
+    
     const exts = document.getElementById('empty-ext-value').value
-        .split(',')
-        .map(e => e.trim().toLowerCase())
-        .filter(e => e);
+        .split(',').map(e => e.trim().toLowerCase());
     
-    if (exts.length === 0) {
-        alert('请输入至少一个文件后缀');
-        return;
-    }
+    const emptyFiles = currentFiles.filter(f => f.size === 0 && exts.some(ext => 
+        ext.includes('*') ? f.type.toLowerCase().includes(ext.replace('*', '')) : ('.' + f.type.toLowerCase()) === ext
+    ));
     
-    // 筛选空文件（size === 0）
-    emptyFiles = currentFiles.filter(f => {
-        const ext = '.' + f.type.toLowerCase();
-        return f.size === 0 && exts.some(e => e === ext || e === '.' + f.type.toLowerCase());
-    });
-    
-    // 按文件夹分组
-    const folderMap = {};
-    emptyFiles.forEach(f => {
-        const parts = f.path.split('/');
-        // 取文件所在文件夹路径（去掉文件名）
-        const folderPath = parts.slice(0, -1).join('/') || '(根目录)';
-        if (!folderMap[folderPath]) {
-            folderMap[folderPath] = [];
-        }
-        folderMap[folderPath].push(f);
-    });
-    
-    // 渲染预览
     const preview = document.getElementById('empty-cleanup-preview');
-    const countDiv = document.getElementById('empty-cleanup-count');
-    const listDiv = document.getElementById('empty-cleanup-list');
+    const list = document.getElementById('empty-cleanup-list');
+    const count = document.getElementById('empty-cleanup-count');
     
     if (emptyFiles.length === 0) {
-        countDiv.textContent = `未找到匹配的空文件`;
-        listDiv.innerHTML = '';
         preview.style.display = 'block';
+        count.textContent = '未找到符合条件的空文件';
+        list.innerHTML = '';
         document.getElementById('btn-delete-empty').disabled = true;
         return;
     }
     
-    countDiv.textContent = `找到 ${emptyFiles.length} 个空文件，分布在 ${Object.keys(folderMap).length} 个文件夹中：`;
-    
-    let html = '';
-    Object.keys(folderMap).sort().forEach(folder => {
-        const files = folderMap[folder];
-        html += `
-            <div style="margin: 8px 0; padding: 8px; background: #fff; border: 1px solid #eee; border-radius: 4px;">
-                <div style="font-weight: bold; color: #555;">📁 ${escapeHtml(folder)}</div>
-                <div style="margin-left: 20px; margin-top: 5px;">
-                    ${files.map(f => `
-                        <label style="display: block; color: #999;">
-                            <input type="checkbox" class="empty-file-checkbox" data-path="${escapeHtml(f.path)}" checked>
-                            📄 ${escapeHtml(f.name)} (${escapeHtml(f.type)}, 0KB)
-                        </label>
-                    `).join('')}
-                </div>
+    preview.style.display = 'block';
+    count.textContent = `找到 ${emptyFiles.length} 个空文件`;
+    list.innerHTML = emptyFiles.map(f => `
+        <div class="dup-file-row">
+            <input type="checkbox" class="empty-checkbox" data-path="${escapeHtml(f.path)}">
+            <div class="dup-file-info">
+                <span class="name">${escapeHtml(f.name)}</span>
+                <span class="path">${escapeHtml(f.path)}</span>
             </div>
-        `;
+        </div>
+    `).join('');
+    
+    // 全选
+    list.querySelectorAll('.empty-checkbox').forEach(cb => {
+        cb.addEventListener('change', () => {
+            const any = list.querySelectorAll('.empty-checkbox:checked').length > 0;
+            document.getElementById('btn-delete-empty').disabled = !any;
+        });
     });
     
-    listDiv.innerHTML = html;
-    preview.style.display = 'block';
     document.getElementById('btn-delete-empty').disabled = false;
 }
 
 function deleteEmptyFiles() {
-    const checked = Array.from(document.querySelectorAll('.empty-file-checkbox:checked'))
-        .map(cb => cb.dataset.path);
-    
-    if (checked.length === 0) {
-        alert('请先勾选要删除的文件');
-        return;
-    }
-    
-    if (!confirm(`确定删除以下 ${checked.length} 个空文件？\n\n${checked.join('\n')}`)) {
-        return;
-    }
-    
-    // 模拟删除
-    currentFiles = currentFiles.filter(f => !checked.includes(f.path));
-    renderFileList(currentFiles);
-    
-    // 重新扫描
-    scanEmptyFiles();
-    
-    alert(`已删除 ${checked.length} 个空文件`);
+    const checked = document.querySelectorAll('.empty-checkbox:checked');
+    if (checked.length === 0) return;
+    const paths = Array.from(checked).map(cb => cb.dataset.path);
+    alert('将删除以下 ' + paths.length + ' 个空文件：\n' + paths.join('\n'));
 }
 
 // 解散文件夹预览
 function previewDissolve() {
-    const keepLevels = parseInt(document.getElementById('keep-levels').value) || 1;
+    const keepLevels = parseInt(document.getElementById('keep-levels').value);
     const preview = document.getElementById('dissolve-preview');
     
-    // 模拟解散预览
+    if (currentFiles.length === 0) {
+        preview.style.display = 'block';
+        preview.innerHTML = '请先扫描文件夹';
+        return;
+    }
+    
+    // 统计目录结构
+    const dirs = {};
+    currentFiles.forEach(f => {
+        const parts = f.path.split('/');
+        if (parts.length > 1) {
+            const dir = parts.slice(0, -1).join('/');
+            dirs[dir] = (dirs[dir] || 0) + 1;
+        }
+    });
+    
+    const dirCount = Object.keys(dirs).length;
+    preview.style.display = 'block';
     preview.innerHTML = `
-        <div style="margin: 10px 0; padding: 10px; background: #f0f0f0;">
-            <div><strong>解散预览（保留${keepLevels}级）：</strong></div>
-            <div style="margin-top: 10px;">
-                <div>原始结构：</div>
-                <pre>📁 测试文件夹/
-├── 📁 文档/
-│   └── 📁 子文件夹/
-│       └── 📄 笔记.txt
-└── 📁 视频/
-    └── 📄 电影.mp4</pre>
-            </div>
-            <div style="margin-top: 10px;">
-                <div>解散后：</div>
-                <pre>📁 测试文件夹/
-├── 📁 文档/
-│   └── 📄 笔记.txt    ← 从子文件夹提到文档
-└── 📁 视频/
-    └── 📄 电影.mp4</pre>
-            </div>
-            <div style="margin-top: 10px; color: red;">
-                将删除的空文件夹：子文件夹
-            </div>
+        <div style="margin-bottom: 10px;">
+            <strong>解散预览</strong>（保留 ${keepLevels} 级）
+        </div>
+        <div>共 ${dirCount} 个目录，${currentFiles.length} 个文件</div>
+        <div style="margin-top: 10px; color: #666;">
+            提示：实际解散功能需要后端支持
         </div>
     `;
-    preview.style.display = 'block';
 }
 
-// 规则保存
+// 规则管理
 function getRules() {
     try {
         return JSON.parse(localStorage.getItem('filepulse_rules') || '[]');
-    } catch (e) {
-        console.warn('规则数据解析失败，使用默认值', e);
+    } catch {
         return [];
     }
 }
 
 function saveRule(name) {
-    const rules = getRules();
-    rules.push({
+    const rule = {
         name,
-        conditions: {
-            size: document.getElementById('size-filter').checked,
-            sizeOp: document.getElementById('size-op').value,
-            sizeValue: document.getElementById('size-value').value,
-            sizeUnit: document.getElementById('size-unit').value,
-            sizeNegate: document.getElementById('size-negate').checked,
-            ext: document.getElementById('ext-filter').checked,
-            extValue: document.getElementById('ext-value').value,
-            extNegate: document.getElementById('ext-negate').checked,
-            date: document.getElementById('date-filter').checked,
-            dateValue: document.getElementById('date-value').value,
-            dateNegate: document.getElementById('date-negate').checked,
-        }
-    });
+        size: document.getElementById('size-filter').checked ? {
+            op: document.getElementById('size-op').value,
+            value: document.getElementById('size-value').value,
+            unit: document.getElementById('size-unit').value,
+            negate: document.getElementById('size-negate').checked
+        } : null,
+        ext: document.getElementById('ext-filter').checked ? {
+            value: document.getElementById('ext-value').value,
+            negate: document.getElementById('ext-negate').checked
+        } : null,
+        date: document.getElementById('date-filter').checked ? {
+            value: document.getElementById('date-value').value,
+            negate: document.getElementById('date-negate').checked
+        } : null
+    };
+    
+    const rules = getRules();
+    rules.push(rule);
     localStorage.setItem('filepulse_rules', JSON.stringify(rules));
     renderRules();
 }
 
 function renderRules() {
-    const rules = getRules();
     const list = document.getElementById('rules-list');
-    list.innerHTML = rules.map((r, i) => `
+    const rules = getRules();
+    
+    if (rules.length === 0) {
+        list.innerHTML = '<div style="color: #999;">暂无规则</div>';
+        return;
+    }
+    
+    list.innerHTML = rules.map((rule, i) => `
         <label>
-            <input type="checkbox" class="rule-checkbox" data-index="${i}">
-            ${escapeHtml(r.name)}
+            <input type="radio" class="rule-checkbox" name="rule" value="${i}">
+            ${escapeHtml(rule.name)}
         </label>
     `).join('');
 }
@@ -363,42 +391,94 @@ document.addEventListener('DOMContentLoaded', () => {
     dropZone.addEventListener('drop', e => {
         e.preventDefault();
         dropZone.style.borderColor = '#ccc';
-        const files = e.dataTransfer.files;
-        if (files.length > 0) {
-            document.getElementById('current-path').textContent = 
-                '当前路径：' + files[0].webkitRelativePath.split('/')[0];
-            scanFolder(files);
+        const items = e.dataTransfer.items;
+        if (items.length > 0) {
+            const entry = items[0].webkitGetAsEntry();
+            if (entry && entry.isDirectory) {
+                selectedFolder = entry;
+                document.getElementById('current-path').textContent = '当前路径：' + entry.name;
+            }
         }
     });
     
     folderInput.addEventListener('change', e => {
         const files = e.target.files;
         if (files.length > 0) {
-            document.getElementById('current-path').textContent = 
-                '当前路径：' + files[0].webkitRelativePath.split('/')[0];
             scanFolder(files);
+            document.getElementById('current-path').textContent = '当前路径：' + files[0].webkitRelativePath.split('/')[0];
         }
     });
     
     // 按钮事件
     document.getElementById('btn-scan').addEventListener('click', () => {
-        if (currentFiles.length === 0) {
-            alert('请先选择文件夹');
-        } else {
-            renderFileList(currentFiles);
+        if (currentFiles.length > 0) {
+            applyFilters();
         }
     });
     
-    document.getElementById('btn-preview').addEventListener('click', previewFiles);
-    document.getElementById('btn-delete').addEventListener('click', deleteFiles);
+    document.getElementById('btn-preview').addEventListener('click', () => {
+        const checked = document.querySelectorAll('.file-checkbox:checked');
+        if (checked.length === 0) {
+            alert('请先选择文件');
+            return;
+        }
+        alert('预览 ' + checked.length + ' 个文件');
+    });
     
+    document.getElementById('btn-delete').addEventListener('click', () => {
+        const checked = document.querySelectorAll('.file-checkbox:checked');
+        if (checked.length === 0) {
+            alert('请先选择文件');
+            return;
+        }
+        if (confirm('确定删除选中的 ' + checked.length + ' 个文件？')) {
+            alert('删除（模拟）');
+        }
+    });
+    
+    // 高级面板
     document.getElementById('btn-advanced').addEventListener('click', () => {
         const panel = document.getElementById('advanced-panel');
         panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
     });
     
-    document.getElementById('btn-preview-dissolve').addEventListener('click', previewDissolve);
+    // 重复文件检测
+    document.getElementById('btn-scan-dup').addEventListener('click', () => {
+        if (currentFiles.length === 0) { alert('请先扫描文件夹'); return; }
+        dupGroups = findDuplicates(currentFiles);
+        renderDuplicates(dupGroups);
+    });
     
+    document.getElementById('btn-delete-dup-selected').addEventListener('click', deleteDupSelected);
+    
+    document.getElementById('btn-close-dup').addEventListener('click', () => {
+        document.getElementById('dup-detect-section').style.display = 'none';
+    });
+    
+    document.getElementById('btn-dup-detect').addEventListener('click', () => {
+        const panel = document.getElementById('dup-detect-section');
+        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    });
+    
+    // 空文件清理
+    document.getElementById('btn-empty-cleanup').addEventListener('click', () => {
+        const panel = document.getElementById('empty-cleanup-section');
+        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    });
+    
+    document.getElementById('btn-scan-empty').addEventListener('click', scanEmptyFiles);
+    document.getElementById('btn-delete-empty').addEventListener('click', deleteEmptyFiles);
+    document.getElementById('btn-close-empty-cleanup').addEventListener('click', () => {
+        document.getElementById('empty-cleanup-section').style.display = 'none';
+    });
+    
+    // 解散文件夹
+    document.getElementById('btn-preview-dissolve').addEventListener('click', previewDissolve);
+    document.getElementById('btn-execute-dissolve').addEventListener('click', () => {
+        alert('执行解散（模拟）');
+    });
+    
+    // 规则管理
     document.getElementById('btn-save-rule').addEventListener('click', () => {
         const name = prompt('请输入规则名称：');
         if (name) saveRule(name);
@@ -429,25 +509,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     
-    document.getElementById('btn-execute-dissolve').addEventListener('click', () => {
-        alert('执行解散（模拟）');
-    });
-    
-    // 空文件清理
-    document.getElementById('btn-empty-cleanup').addEventListener('click', () => {
-        const panel = document.getElementById('empty-cleanup-section');
-        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-        const advPanel = document.getElementById('advanced-panel');
-        advPanel.style.display = 'block';
-    });
-    
-    document.getElementById('btn-close-empty-cleanup').addEventListener('click', () => {
-        document.getElementById('empty-cleanup-section').style.display = 'none';
-    });
-    
-    document.getElementById('btn-scan-empty').addEventListener('click', scanEmptyFiles);
-    document.getElementById('btn-delete-empty').addEventListener('click', deleteEmptyFiles);
-    
     // 全选（仅选中可见行，排除被筛选隐藏的行）
     document.getElementById('select-all').addEventListener('change', e => {
         document.querySelectorAll('.file-checkbox').forEach(cb => {
@@ -477,4 +538,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     renderRules();
+    
+    // 初始化线程数（自动检测CPU核数）
+    const cores = navigator.hardwareConcurrency || 4;
+    document.getElementById('thread-count').value = cores;
+    document.getElementById('thread-hint').textContent = `检测到 ${navigator.hardwareConcurrency ? cores + ' 核CPU' : '默认值'}`;
 });

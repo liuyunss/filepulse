@@ -1,0 +1,21 @@
+{
+  "name": "文件脉搏 FilePulse",
+  "short_name": "FilePulse",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#6B7280",
+  "description": "跨平台文件分析筛选工具",
+  "icons": [
+    {
+      "src": "icons/Icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/Icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

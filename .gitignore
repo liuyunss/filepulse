@@ -1,26 +1,17 @@
-# ── Node.js ──────────────────────────────────────────────────────────
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-package-lock.json
-yarn.lock
-pnpm-lock.yaml
-
-# ── Frontend Build ──────────────────────────────────────────────────
-dist/
+# ── Flutter ─────────────────────────────────────────────────
+.dart_tool/
+.packages
 build/
+.flutter-plugins
+.flutter-plugins-dependencies
+pubspec.lock
+
+# ── Frontend Build ──────────────────────────────────────────
+dist/
 out/
 .cache/
 
-# ── Rust / Tauri ────────────────────────────────────────────────────
-src-tauri/target/
-src-tauri/WixTools/
-src-tauri/Frameworks/
-*.rs.bk
-
-# ── IDE ─────────────────────────────────────────────────────────────
+# ── IDE ─────────────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
@@ -30,40 +21,25 @@ src-tauri/Frameworks/
 .classpath
 .settings/
 
-# ── OS ──────────────────────────────────────────────────────────────
+# ── OS ──────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 ehthumbs.db
 Desktop.ini
 ._*
 
-# ── Environment / Secrets ──────────────────────────────────────────
+# ── Environment / Secrets ──────────────────────────────────
 .env
 .env.*
 !.env.example
 
-# ── Python ──────────────────────────────────────────────────────────
-__pycache__/
-*.py[cod]
-*$py.class
-*.egg-info/
-.eggs/
-venv/
-.venv/
-
-# ── Logs ────────────────────────────────────────────────────────────
+# ── Logs ────────────────────────────────────────────────────
 *.log
 logs/
 
-# ── Tauri ───────────────────────────────────────────────────────────
-src-tauri/icons/*.png
-src-tauri/icons/*.ico
-!src-tauri/icons/icon.png
-
-# ── Misc ────────────────────────────────────────────────────────────
+# ── Misc ────────────────────────────────────────────────────
 *.bak
 *.tmp
 *.temp
-.cache/
 tmp/
 temp/
