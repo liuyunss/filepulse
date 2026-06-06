@@ -7,6 +7,13 @@ class FileServer {
   late HttpServer _server;
   String _scannedPath = '';
 
+  /// 被阻止的系统敏感路径前缀（跨平台）
+  static final List<String> _blockedPrefixes = [
+    '/etc', '/bin', '/sbin', '/usr', '/sys', '/proc', '/dev', '/boot', '/lib',
+    'C:\\Windows', 'C:\\Program Files', 'C:\\Program Files (x86)',
+    'C:\\Users\\Default', 'C:\\ProgramData',
+  ];
+
   FileServer({this.port = 8080});
 
   Future<void> start() async {
@@ -62,12 +69,7 @@ class FileServer {
 
     // 路径安全验证：拒绝系统敏感路径
     final resolved = p.normalize(File(path).absolute.path);
-    final blockedPrefixes = [
-      '/etc', '/bin', '/sbin', '/usr', '/sys', '/proc', '/dev', '/boot', '/lib',
-      'C:\\Windows', 'C:\\Program Files', 'C:\\Program Files (x86)',
-      'C:\\Users\\Default', 'C:\\ProgramData',
-    ];
-    for (final prefix in blockedPrefixes) {
+    for (final prefix in _blockedPrefixes) {
       if (resolved.toLowerCase().startsWith(prefix.toLowerCase())) {
         request.response.headers.contentType = ContentType.json;
         request.response.statusCode = 403;
@@ -239,12 +241,7 @@ class FileServer {
     // 使用 p.normalize() 规范化路径，解析 .. 段防止路径遍历
     final resolved = p.normalize(File(path).absolute.path);
     // 拒绝系统敏感目录（跨平台）
-    final blockedPrefixes = [
-      '/etc', '/bin', '/sbin', '/usr', '/sys', '/proc', '/dev', '/boot', '/lib',
-      'C:\\Windows', 'C:\\Program Files', 'C:\\Program Files (x86)',
-      'C:\\Users\\Default', 'C:\\ProgramData',
-    ];
-    for (final prefix in blockedPrefixes) {
+    for (final prefix in _blockedPrefixes) {
       if (resolved.toLowerCase().startsWith(prefix.toLowerCase())) return false;
     }
     // 如果有已扫描路径，验证是否在其下
