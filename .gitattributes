@@ -1,0 +1,7 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Generated Flutter files — keep LF as-is
+**/generated_plugin_registrant.* text eol=lf
+**/generated_plugins.cmake text eol=lf
+**/GeneratedPluginRegistrant.swift text eol=lf
