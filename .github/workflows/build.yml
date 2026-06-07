@@ -60,7 +60,7 @@ jobs:
         run: |
           mkdir -p release
           cd build/linux/x64/release/bundle
-          tar -czf ../../../../release/FilePulse-linux-x64.tar.gz .
+          tar -czf "${GITHUB_WORKSPACE}/release/FilePulse-linux-x64.tar.gz" .
 
       - name: Upload Linux artifacts
         if: matrix.platform == 'linux'
@@ -79,7 +79,7 @@ jobs:
         run: |
           mkdir -p release
           cd build/macos/Build/Products/Release
-          zip -r ../../../../release/FilePulse-macos.zip FilePulse.app
+          zip -r "${GITHUB_WORKSPACE}/release/FilePulse-macos.zip" FilePulse.app
 
       - name: Upload macOS artifacts
         if: matrix.platform == 'macos'
@@ -99,7 +99,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path release
           Compress-Archive -Path "build\windows\x64\runner\Release\*" `
-            -DestinationPath "release\FilePulse-windows-x64.zip"
+            -DestinationPath "$env:GITHUB_WORKSPACE\release\FilePulse-windows-x64.zip"
 
       - name: Upload Windows artifacts
         if: matrix.platform == 'windows'
