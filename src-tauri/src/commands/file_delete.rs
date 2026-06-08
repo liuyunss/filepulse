@@ -13,7 +13,8 @@ pub fn delete_files(paths: Vec<String>) -> Result<Vec<String>, String> {
         // Safety: block system directories
         let path_lower = path_str.to_lowercase();
         if is_system_path(&path_lower) {
-            return Err(format!("Cannot delete system path: {}", path_str));
+            eprintln!("Skipping system path: {}", path_str);
+            continue;
         }
 
         match trash::delete(&path) {
