@@ -186,8 +186,12 @@ async function handleDelete() {
     return
   }
 
-  await store.deleteSelected()
-  message.success(`已删除 ${count} 个项目`)
+  const deletedCount = await store.deleteSelected()
+  if (deletedCount > 0) {
+    message.success(`已删除 ${deletedCount} 个项目`)
+  } else if (count > 0) {
+    message.warning('所有文件删除失败')
+  }
 }
 
 async function handleDissolve() {

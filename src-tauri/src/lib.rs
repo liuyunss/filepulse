@@ -1,11 +1,11 @@
 pub mod commands;
 pub mod error;
 
-use commands::{file_scan, file_delete, file_dissolve, rule_store};
+use commands::{file_delete, file_dissolve, file_scan, rule_store};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    if let Err(e) = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -20,5 +20,7 @@ pub fn run() {
             rule_store::save_rules,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+    {
+        eprintln!("Error while running Tauri application: {}", e);
+    }
 }

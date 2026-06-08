@@ -176,18 +176,20 @@ export const useFilePulseStore = defineStore('filepulse', () => {
     }
   }
 
-  async function deleteSelected() {
+  async function deleteSelected(): Promise<number> {
     const paths = Array.from(selectedPaths.value)
-    if (paths.length === 0) return
+    if (paths.length === 0) return 0
 
     try {
-      const deleted = await invoke<string[]>('delete_files', { paths })
+      const result = await invoke<{ deleted: string[]; failed: string[] }>('delete_files', { paths })
       // Remove deleted from files list
-      const deletedSet = new Set(deleted)
+      const deletedSet = new Set(result.deleted)
       files.value = files.value.filter(f => !deletedSet.has(f.path))
       selectedPaths.value.clear()
+      return result.deleted.length
     } catch (e) {
       console.error('Delete failed:', e)
+      return 0
     }
   }
 

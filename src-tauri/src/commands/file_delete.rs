@@ -1,8 +1,16 @@
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeleteResult {
+    pub deleted: Vec<String>,
+    pub failed: Vec<String>,
+}
+
 #[tauri::command]
-pub fn delete_files(paths: Vec<String>) -> Result<Vec<String>, String> {
+pub fn delete_files(paths: Vec<String>) -> Result<DeleteResult, String> {
     let mut deleted = Vec::new();
+    let mut failed = Vec::new();
 
     for path_str in &paths {
         let path = PathBuf::from(path_str);
@@ -21,13 +29,12 @@ pub fn delete_files(paths: Vec<String>) -> Result<Vec<String>, String> {
             Ok(_) => deleted.push(path_str.clone()),
             Err(e) => {
                 eprintln!("Failed to trash {}: {}", path_str, e);
-                // Do NOT fall back to permanent delete — let the user decide
-                // Return error instead of silently destroying files
+                failed.push(path_str.clone());
             }
         }
     }
 
-    Ok(deleted)
+    Ok(DeleteResult { deleted, failed })
 }
 
 fn is_system_path(path: &str) -> bool {
