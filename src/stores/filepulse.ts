@@ -237,11 +237,13 @@ export const useFilePulseStore = defineStore('filepulse', () => {
       filters: JSON.parse(JSON.stringify(filters.value)),
       created_at: new Date().toISOString(),
     }
+    const prevRules = [...rules.value]
     rules.value.push(rule)
     try {
       await invoke('save_rules', { rules: rules.value })
     } catch (e) {
       console.error('Save rule failed:', e)
+      rules.value = prevRules
     }
   }
 

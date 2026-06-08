@@ -20,18 +20,9 @@ pub fn delete_files(paths: Vec<String>) -> Result<Vec<String>, String> {
         match trash::delete(&path) {
             Ok(_) => deleted.push(path_str.clone()),
             Err(e) => {
-                // Fallback to permanent delete
-                if path.is_dir() {
-                    match std::fs::remove_dir_all(&path) {
-                        Ok(_) => deleted.push(path_str.clone()),
-                        Err(e2) => eprintln!("Failed to delete {}: {}", path_str, e2),
-                    }
-                } else {
-                    match std::fs::remove_file(&path) {
-                        Ok(_) => deleted.push(path_str.clone()),
-                        Err(e2) => eprintln!("Failed to delete {}: {}", path_str, e2),
-                    }
-                }
+                eprintln!("Failed to trash {}: {}", path_str, e);
+                // Do NOT fall back to permanent delete — let the user decide
+                // Return error instead of silently destroying files
             }
         }
     }

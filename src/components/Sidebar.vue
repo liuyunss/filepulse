@@ -7,11 +7,7 @@
       </button>
       <button
         class="sidebar__btn sidebar__btn--drop"
-        @drop.prevent="onDrop"
-        @dragover.prevent
         :class="{ 'sidebar__btn--active': dragging }"
-        @dragenter="dragging = true"
-        @dragleave="dragging = false"
       >
         <span>📁</span> 拖入文件夹
       </button>
@@ -70,12 +66,21 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { open } from '@tauri-apps/plugin-dialog'
+import { open, confirm } from '@tauri-apps/plugin-dialog'
+import { getCurrentWebview } from '@tauri-apps/api/webviewWindow'
 import { useFilePulseStore } from '@/stores/filepulse'
 import RuleManager from './RuleManager.vue'
 
 const store = useFilePulseStore()
 const dragging = ref(false)
+
+// Tauri v2 drag-drop: get full file paths from native events
+getCurrentWebview().onDragDropEvent((event) => {
+  if (event.payload.type === 'drop' && event.payload.paths.length > 0) {
+    store.scanFiles(event.payload.paths[0])
+  }
+  dragging.value = event.payload.type === 'over'
+})
 
 const filterLabels: Record<string, string> = {
   name: '名称',
@@ -98,23 +103,7 @@ async function selectFolder() {
   }
 }
 
-function onDrop(e: DragEvent) {
-  dragging.value = false
-  const files = e.dataTransfer?.files
-  if (files && files.length > 0) {
-    // In Tauri, dropped files give us the path via the file's name
-    // For directories, we need to use the webkitRelativePath or invoke
-    const file = files[0]
-    if ('webkitRelativePath' in file) {
-      const path = (file as any).webkitRelativePath || file.name
-      // Try to extract directory from the path
-      const parts = path.split('/')
-      if (parts.length > 1) {
-        store.scanFiles('/' + parts.slice(0, -1).join('/'))
-      }
-    }
-  }
-}
+// Drag-drop is now handled by Tauri's onDragDropEvent above (imports)
 
 async function rescan() {
   if (store.currentPath) {

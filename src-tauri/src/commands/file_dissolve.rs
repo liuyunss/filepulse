@@ -62,7 +62,15 @@ fn collect_files(
                     if !target_dir.exists() {
                         std::fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
                     }
-                    std::fs::rename(&path, &target_path).map_err(|e| e.to_string())?;
+                    std::fs::rename(&path, &target_path).or_else(|e| {
+                        // Cross-filesystem rename may fail; fall back to copy+remove
+                        std::fs::copy(&path, &target_path).map_err(|e2| {
+                            format!("rename failed ({}) and copy also failed ({})", e, e2)
+                        })?;
+                        std::fs::remove_file(&path).map_err(|e2| {
+                            format!("copy succeeded but removing source failed: {}", e2)
+                        })
+                    }).map_err(|e| e.to_string())?;
                 }
             }
         }

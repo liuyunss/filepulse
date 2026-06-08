@@ -123,6 +123,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { NModal, NButton, useMessage } from 'naive-ui'
+import { confirm } from '@tauri-apps/plugin-dialog'
 import { useFilePulseStore } from '@/stores/filepulse'
 import { shell } from '@tauri-apps/api'
 import type { DissolveResult } from '@/types'
@@ -175,11 +176,11 @@ async function handleDelete() {
   if (count === 0) return
 
   try {
-    const confirmed = await window.__TAURI__?.dialog?.confirm?.(
+    const confirmed = await confirm(
       `确定删除选中的 ${count} 个文件/文件夹？`,
-      '确认删除'
+      { title: '确认删除' }
     )
-    if (confirmed === false) return
+    if (!confirmed) return
   } catch {
     // If confirm dialog is unavailable, proceed only if explicitly supported
     return
