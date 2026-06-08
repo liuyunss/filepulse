@@ -65,21 +65,27 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { open, confirm } from '@tauri-apps/plugin-dialog'
-import { getCurrentWebview } from '@tauri-apps/api/webviewWindow'
+import { ref, computed, onMounted } from 'vue'
+import { open } from '@tauri-apps/plugin-dialog'
 import { useFilePulseStore } from '@/stores/filepulse'
 import RuleManager from './RuleManager.vue'
 
 const store = useFilePulseStore()
 const dragging = ref(false)
 
-// Tauri v2 drag-drop: get full file paths from native events
-getCurrentWebview().onDragDropEvent((event) => {
-  if (event.payload.type === 'drop' && event.payload.paths.length > 0) {
-    store.scanFiles(event.payload.paths[0])
+// Tauri drag-drop will be re-enabled once API issue is resolved
+onMounted(async () => {
+  try {
+    const { getCurrentWebview } = await import('@tauri-apps/api/webviewWindow')
+    getCurrentWebview().onDragDropEvent((event: any) => {
+      if (event.payload.type === 'drop' && event.payload.paths.length > 0) {
+        store.scanFiles(event.payload.paths[0])
+      }
+      dragging.value = event.payload.type === 'over'
+    })
+  } catch (e) {
+    console.warn('Drag-drop not available:', e)
   }
-  dragging.value = event.payload.type === 'over'
 })
 
 const filterLabels: Record<string, string> = {
@@ -102,8 +108,6 @@ async function selectFolder() {
     store.scanFiles(selected)
   }
 }
-
-// Drag-drop is now handled by Tauri's onDragDropEvent above (imports)
 
 async function rescan() {
   if (store.currentPath) {

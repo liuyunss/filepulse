@@ -125,7 +125,7 @@ import { ref, computed } from 'vue'
 import { NModal, NButton, useMessage } from 'naive-ui'
 import { confirm } from '@tauri-apps/plugin-dialog'
 import { useFilePulseStore } from '@/stores/filepulse'
-import { shell } from '@tauri-apps/api'
+import { open as shellOpen } from '@tauri-apps/plugin-shell'
 import type { DissolveResult } from '@/types'
 
 const store = useFilePulseStore()
@@ -207,7 +207,7 @@ async function confirmDissolve() {
 
 async function openInExplorer(path: string) {
   try {
-    await shell.open(path)
+    await shellOpen(path)
   } catch (e) {
     console.error('Open in explorer failed:', e)
   }

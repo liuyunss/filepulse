@@ -1,31 +1,70 @@
 # Dependencies
 node_modules/
 .pnpm-store/
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
 
 # Build output
 dist/
-target/
+.target/
+src-tauri/target/
+
+# Flutter (legacy - no longer used)
+build/
+linux/
+macos/
+windows/
+pubspec.lock
+pubspec.yaml
+analysis_options.yaml
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+*.iml
+.filepulse.iml
 
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # Env
 .env
 .env.local
-
-# Tauri
-src-tauri/target/
+.env.*.local
 
 # Logs
 *.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
 # TypeScript
 *.tsbuildinfo
+*.d.ts.map
+
+# Rust
+**/*.rs.bk
+Cargo.lock.bak
+
+# Old/Unused
+prototype/
+test/
+docs/
+
+# Tauri
+**/src-tauri/.tauri/
+src-tauri/gen/
+src-tauri/icons/
+
+# Temp files
+*.tmp
+*.temp
+~$*

@@ -1,5 +1,4 @@
 pub mod commands;
-pub mod error;
 
 use commands::{file_delete, file_dissolve, file_scan, rule_store};
 
