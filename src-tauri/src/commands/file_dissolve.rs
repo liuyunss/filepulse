@@ -49,7 +49,8 @@ fn collect_files(
             if relative_depth > keep_levels as usize {
                 // Move file up to keep_levels depth
                 let target_dir = get_target_dir(root, &path, keep_levels);
-                let file_name = path.file_name().unwrap();
+                let file_name = path.file_name()
+                    .ok_or_else(|| format!("Cannot get filename for: {}", path.display()))?;
                 let target_path = target_dir.join(file_name);
 
                 results.push(DissolveResult {
