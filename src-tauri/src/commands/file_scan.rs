@@ -8,6 +8,7 @@ pub struct FileItem {
     pub name: String,
     pub size: u64,
     pub is_dir: bool,
+    pub is_empty: bool,
     pub modified: String,
     pub extension: String,
 }
@@ -58,11 +59,20 @@ pub fn scan_files(options: ScanOptions) -> Result<Vec<FileItem>, String> {
             })
             .unwrap_or_default();
 
+        let is_empty = if meta.is_dir() {
+            std::fs::read_dir(path)
+                .map(|mut entries| entries.next().is_none())
+                .unwrap_or(true)
+        } else {
+            false
+        };
+
         items.push(FileItem {
             path: path.to_string_lossy().to_string(),
             name,
             size: meta.len(),
             is_dir: meta.is_dir(),
+            is_empty,
             modified,
             extension,
         });

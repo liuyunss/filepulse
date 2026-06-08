@@ -3,6 +3,7 @@ export interface FileItem {
   name: string
   size: number
   is_dir: boolean
+  is_empty: boolean
   modified: string
   extension: string
 }

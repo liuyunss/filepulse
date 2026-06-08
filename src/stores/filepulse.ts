@@ -128,7 +128,7 @@ export const useFilePulseStore = defineStore('filepulse', () => {
           break
         }
         case 'empty_dir': {
-          match = file.is_dir && file.size === 0
+          match = file.is_dir && file.is_empty
           break
         }
       }
