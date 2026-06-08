@@ -175,12 +175,14 @@ async function handleDelete() {
   if (count === 0) return
 
   try {
-    await window.__TAURI__?.dialog?.confirm?.(
+    const confirmed = await window.__TAURI__?.dialog?.confirm?.(
       `确定删除选中的 ${count} 个文件/文件夹？`,
       '确认删除'
     )
+    if (confirmed === false) return
   } catch {
-    // If confirm dialog fails, proceed anyway (Tauri dialog might not be available in web mode)
+    // If confirm dialog is unavailable, proceed only if explicitly supported
+    return
   }
 
   await store.deleteSelected()
