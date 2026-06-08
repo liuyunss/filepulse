@@ -1,0 +1,35 @@
+{
+  "name": "filepulse",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-shell": "^2.3.5",
+    "@tauri-apps/plugin-dialog": "^2.7.0",
+    "@tauri-apps/plugin-fs": "^2.5.0",
+    "@tauri-apps/plugin-store": "^2.4.2",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-os": "^2.3.2",
+    "naive-ui": "^2.43.2",
+    "vue": "^3.5.13",
+    "vue-router": "^4.6.4",
+    "pinia": "^3.0.4",
+    "@vueuse/core": "^14.2.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "typescript": "~5.6.2",
+    "vite": "^6.0.3",
+    "vue-tsc": "^2.1.10",
+    "@unocss/preset-uno": "^66.6.3",
+    "unocss": "^66.6.2"
+  }
+}
