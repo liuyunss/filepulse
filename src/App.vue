@@ -6,7 +6,7 @@
         <div class="app-body">
           <Sidebar />
           <main class="app-main">
-            <slot />
+            <router-view />
           </main>
         </div>
         <StatusBar />
