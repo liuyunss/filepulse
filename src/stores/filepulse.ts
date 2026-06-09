@@ -12,13 +12,12 @@ export const useFilePulseStore = defineStore('filepulse', () => {
   const loading = ref(false)
   const previewMode = ref(false)
 
-  // Filters
+  // Dynamic filters (pre-populated with 4 defaults)
   const filters = ref<FilterCondition[]>([
     { filter_type: 'name', enabled: false, operator: 'contains', value: '', negate: false },
     { filter_type: 'extension', enabled: false, value: '', negate: false },
     { filter_type: 'size', enabled: false, operator: '>', value: '', unit: 'MB', negate: false },
     { filter_type: 'date', enabled: false, operator: 'recent', value: '', unit: 'day', negate: false },
-    { filter_type: 'empty_dir', enabled: false, negate: false },
   ])
 
   // Dissolve
@@ -35,12 +34,9 @@ export const useFilePulseStore = defineStore('filepulse', () => {
   // Computed
   const filteredFiles = computed(() => {
     let result = files.value
-
     if (previewMode.value) {
       result = result.filter(file => matchesFilters(file))
     }
-
-    // Sort
     result = [...result].sort((a, b) => {
       let cmp = 0
       switch (sortKey.value) {
@@ -51,7 +47,6 @@ export const useFilePulseStore = defineStore('filepulse', () => {
       }
       return sortAsc.value ? cmp : -cmp
     })
-
     return result
   })
 
@@ -61,6 +56,47 @@ export const useFilePulseStore = defineStore('filepulse', () => {
     if (!previewMode.value) return 0
     return files.value.filter(f => matchesFilters(f)).length
   })
+
+  // Filter management
+  function addFilter(type: FilterCondition['filter_type']) {
+    const base: FilterCondition = { filter_type: type, enabled: true, negate: false }
+    switch (type) {
+      case 'name':
+        filters.value.push({ ...base, operator: 'contains', value: '' })
+        break
+      case 'extension':
+        filters.value.push({ ...base, value: '' })
+        break
+      case 'size':
+        filters.value.push({ ...base, operator: '>', value: '', unit: 'MB' })
+        break
+      case 'date':
+        filters.value.push({ ...base, operator: 'recent', value: '', unit: 'day' })
+        break
+      case 'empty_dir':
+        filters.value.push({ ...base })
+        break
+    }
+  }
+
+  function removeFilter(index: number) {
+    filters.value.splice(index, 1)
+  }
+
+  function clearFilters() {
+    filters.value = []
+    previewMode.value = false
+  }
+
+  function resetFilters() {
+    filters.value = [
+      { filter_type: 'name', enabled: false, operator: 'contains', value: '', negate: false },
+      { filter_type: 'extension', enabled: false, value: '', negate: false },
+      { filter_type: 'size', enabled: false, operator: '>', value: '', unit: 'MB', negate: false },
+      { filter_type: 'date', enabled: false, operator: 'recent', value: '', unit: 'day', negate: false },
+    ]
+    previewMode.value = false
+  }
 
   // Methods
   async function scanFiles(path: string) {
@@ -82,11 +118,10 @@ export const useFilePulseStore = defineStore('filepulse', () => {
   function matchesFilters(file: FileItem): boolean {
     for (const filter of filters.value) {
       if (!filter.enabled) continue
-
       let match = false
       switch (filter.filter_type) {
         case 'name': {
-          const val = filter.value?.toLowerCase() || ''
+          const val = (filter.value || '').toLowerCase()
           const name = file.name.toLowerCase()
           switch (filter.operator) {
             case 'contains': match = name.includes(val); break
@@ -132,7 +167,6 @@ export const useFilePulseStore = defineStore('filepulse', () => {
           break
         }
       }
-
       if (filter.negate) match = !match
       if (!match) return false
     }
@@ -179,10 +213,8 @@ export const useFilePulseStore = defineStore('filepulse', () => {
   async function deleteSelected(): Promise<number> {
     const paths = Array.from(selectedPaths.value)
     if (paths.length === 0) return 0
-
     try {
       const result = await invoke<{ deleted: string[]; failed: string[] }>('delete_files', { paths })
-      // Remove deleted from files list
       const deletedSet = new Set(result.deleted)
       files.value = files.value.filter(f => !deletedSet.has(f.path))
       selectedPaths.value.clear()
@@ -197,39 +229,25 @@ export const useFilePulseStore = defineStore('filepulse', () => {
     if (!currentPath.value) return []
     try {
       return await invoke<DissolveResult[]>('dissolve_folder', {
-        path: currentPath.value,
-        keepLevels: keepLevels.value,
-        dryRun: true,
+        path: currentPath.value, keepLevels: keepLevels.value, dryRun: true,
       })
-    } catch (e) {
-      console.error('Dissolve preview failed:', e)
-      return []
-    }
+    } catch (e) { console.error('Dissolve preview failed:', e); return [] }
   }
 
   async function dissolveExecute(): Promise<DissolveResult[]> {
     if (!currentPath.value) return []
     try {
       const results = await invoke<DissolveResult[]>('dissolve_folder', {
-        path: currentPath.value,
-        keepLevels: keepLevels.value,
-        dryRun: false,
+        path: currentPath.value, keepLevels: keepLevels.value, dryRun: false,
       })
-      // Re-scan after dissolve
       await scanFiles(currentPath.value)
       return results
-    } catch (e) {
-      console.error('Dissolve execute failed:', e)
-      return []
-    }
+    } catch (e) { console.error('Dissolve execute failed:', e); return [] }
   }
 
   async function loadRules() {
-    try {
-      rules.value = await invoke<FilterRule[]>('load_rules')
-    } catch (e) {
-      console.error('Load rules failed:', e)
-    }
+    try { rules.value = await invoke<FilterRule[]>('load_rules') }
+    catch (e) { console.error('Load rules failed:', e) }
   }
 
   async function saveRule(name: string) {
@@ -239,23 +257,16 @@ export const useFilePulseStore = defineStore('filepulse', () => {
       filters: JSON.parse(JSON.stringify(filters.value)),
       created_at: new Date().toISOString(),
     }
-    const prevRules = [...rules.value]
+    const prev = [...rules.value]
     rules.value.push(rule)
-    try {
-      await invoke('save_rules', { rules: rules.value })
-    } catch (e) {
-      console.error('Save rule failed:', e)
-      rules.value = prevRules
-    }
+    try { await invoke('save_rules', { rules: rules.value }) }
+    catch (e) { console.error('Save rule failed:', e); rules.value = prev }
   }
 
   async function deleteRule(id: string) {
     rules.value = rules.value.filter(r => r.id !== id)
-    try {
-      await invoke('save_rules', { rules: rules.value })
-    } catch (e) {
-      console.error('Delete rule failed:', e)
-    }
+    try { await invoke('save_rules', { rules: rules.value }) }
+    catch (e) { console.error('Delete rule failed:', e) }
   }
 
   function loadRule(rule: FilterRule) {
@@ -264,44 +275,17 @@ export const useFilePulseStore = defineStore('filepulse', () => {
   }
 
   function setSort(key: 'name' | 'size' | 'modified' | 'extension') {
-    if (sortKey.value === key) {
-      sortAsc.value = !sortAsc.value
-    } else {
-      sortKey.value = key
-      sortAsc.value = true
-    }
+    if (sortKey.value === key) { sortAsc.value = !sortAsc.value }
+    else { sortKey.value = key; sortAsc.value = true }
   }
 
   return {
-    // State
-    files,
-    selectedPaths,
-    currentPath,
-    recursive,
-    loading,
-    previewMode,
-    filters,
-    dissolveMode,
-    keepLevels,
-    rules,
-    sortKey,
-    sortAsc,
-    // Computed
-    filteredFiles,
-    selectedCount,
-    totalCount,
-    matchedCount,
-    // Methods
-    scanFiles,
-    toggleSelect,
-    selectAll,
-    deleteSelected,
-    dissolvePreview,
-    dissolveExecute,
-    loadRules,
-    saveRule,
-    deleteRule,
-    loadRule,
-    setSort,
+    files, selectedPaths, currentPath, recursive, loading, previewMode,
+    filters, dissolveMode, keepLevels, rules, sortKey, sortAsc,
+    filteredFiles, selectedCount, totalCount, matchedCount,
+    scanFiles, toggleSelect, selectAll, deleteSelected,
+    dissolvePreview, dissolveExecute,
+    loadRules, saveRule, deleteRule, loadRule,
+    addFilter, removeFilter, clearFilters, resetFilters, setSort,
   }
 })

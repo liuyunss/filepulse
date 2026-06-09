@@ -1,6 +1,6 @@
 pub mod commands;
 
-use commands::{file_delete, file_dissolve, file_scan, rule_store};
+use commands::{file_delete, file_dissolve, file_rotate, file_scan, rule_store};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -15,6 +15,8 @@ pub fn run() {
             file_scan::scan_files,
             file_delete::delete_files,
             file_dissolve::dissolve_folder,
+            file_rotate::rotate_file,
+            file_rotate::preview_rotate,
             rule_store::load_rules,
             rule_store::save_rules,
         ])
