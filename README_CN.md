@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_256.png" width="100" alt="FilePulse Icon">
+  <img src="public/icon.png" width="100" alt="FilePulse Icon">
 </p>
 
 <h1 align="center">FilePulse（文件脉搏）</h1>
@@ -32,7 +32,9 @@
 | ☑️ **批量操作** | 全选 / 单选 → 批量删除（带确认对话框） |
 | 🗑️ **空文件夹清理** | 一键扫描并删除所有空目录 |
 | 📂 **文件夹解散** | 保留 N 级目录后拍平文件结构，预览→确认，自动处理同名冲突 + 清理空目录 |
-| 💾 **配置保存** | 筛选条件保存为命名规则（最多 5 条），一键加载，持久化到本地 |
+| 🔄 **文件旋转** | 旋转图片/视频文件，支持 EXIF 方向校正 |
+| 🔍 **重复文件检测** | 基于 MD5 哈希查找并删除重复文件 |
+| 💾 **配置保存** | 筛选条件保存为命名规则，一键加载，持久化到本地 |
 
 ## 🚀 快速开始
 
@@ -49,63 +51,85 @@
 ### 从源码构建
 
 **环境要求：**
-- [Flutter SDK](https://docs.flutter.dev/get-started/install) ≥ 3.0
-- 各平台桌面开发工具链（详见 [Flutter Desktop](https://docs.flutter.dev/platform-integration/desktop)）
+- [Node.js](https://nodejs.org/) ≥ 18
+- [pnpm](https://pnpm.io/) ≥ 9
+- [Rust](https://www.rust-lang.org/tools/install)（stable）
+- 各平台额外依赖（见下方）
 
 ```bash
 # 克隆仓库
 git clone https://github.com/liuyunss/filepulse.git
 cd filepulse
 
-# 安装依赖
-flutter pub get
+# 安装前端依赖
+pnpm install
 
 # 运行（调试模式）
-flutter run -d windows   # Windows
-flutter run -d macos     # macOS
-flutter run -d linux     # Linux
+pnpm tauri dev
 
 # 构建发布版本
-flutter build windows --release
-flutter build macos --release
-flutter build linux --release
+pnpm tauri build
 ```
 
 **Linux 额外依赖：**
 ```bash
-sudo apt-get install -y ninja-build libgtk-3-dev
+sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+  librsvg2-dev patchelf xdg-utils
 ```
 
 ## 🏗️ 项目结构
 
 ```
-lib/
-├── main.dart                  # 入口
-├── models/
-│   ├── file_item.dart         # 文件数据模型
-│   └── filter_rule.dart       # 筛选规则模型（可序列化）
-├── services/
-│   └── file_service.dart      # 核心业务逻辑（扫描/筛选/删除/解散）
-└── widgets/
-    └── app.dart               # 全部 UI（侧栏筛选 + 文件列表 + 工具面板）
+├── src/                        # Vue 3 前端
+│   ├── App.vue                 # 根组件
+│   ├── main.ts                 # 入口文件
+│   ├── components/
+│   │   ├── DialogBox.vue       # 确认对话框
+│   │   └── Sidebar.vue         # 筛选侧栏
+│   ├── views/
+│   │   └── MainView.vue        # 主文件列表视图
+│   ├── stores/
+│   │   └── filepulse.ts        # Pinia 状态管理
+│   ├── types/
+│   │   └── index.ts            # TypeScript 类型定义
+│   └── styles/
+│       └── main.css            # 全局样式
+├── src-tauri/                  # Rust 后端（Tauri 2）
+│   ├── src/
+│   │   ├── lib.rs              # 插件注册 & 命令处理
+│   │   ├── main.rs             # 入口
+│   │   └── commands/
+│   │       ├── file_scan.rs    # 递归文件夹扫描
+│   │       ├── file_delete.rs  # 批量删除 & 空目录清理
+│   │       ├── file_dissolve.rs # 文件夹拍平
+│   │       ├── file_dedupe.rs  # 重复文件检测（MD5）
+│   │       ├── file_rotate.rs  # 图片/视频旋转
+│   │       ├── file_reveal.rs  # 在系统文件管理器中打开
+│   │       └── rule_store.rs   # 筛选预设持久化
+│   ├── Cargo.toml
+│   └── tauri.conf.json
+├── package.json
+├── vite.config.ts
+└── pnpm-lock.yaml
 ```
 
 ## 🛠️ 技术栈
 
-| 技术 | 用途 |
-|------|------|
-| [Flutter](https://flutter.dev) | 跨平台桌面 UI（Material Design 3） |
-| `dart:io` | 直接文件系统操作（无服务端） |
-| [provider](https://pub.dev/packages/provider) | 状态管理 |
-| [shared_preferences](https://pub.dev/packages/shared_preferences) | 配置持久化 |
-| [desktop_drop](https://pub.dev/packages/desktop_drop) | 拖放支持 |
-| [file_picker](https://pub.dev/packages/file_picker) | 原生文件夹选择 |
+| 层级 | 技术 | 用途 |
+|------|------|------|
+| 前端 | [Vue 3](https://vuejs.org/) + [TypeScript](https://www.typescriptlang.org/) | 响应式 UI |
+| UI 组件 | [Naive UI](https://www.naiveui.com/) | 组件库 |
+| 状态管理 | [Pinia](https://pinia.vuejs.org/) | 集中状态管理 |
+| CSS | [UnoCSS](https://unocss.dev/) | 原子化 CSS |
+| 构建工具 | [Vite 6](https://vitejs.dev/) | 前端打包 |
+| 后端 | [Tauri 2](https://v2.tauri.app/) (Rust) | 原生文件操作 |
+| CI/CD | [GitHub Actions](https://docs.github.com/en/actions) | 多平台自动构建 |
 
 ## 🔄 CI/CD
 
 使用 **GitHub Actions** 自动化构建和发布：
 
-- 推送 `v*` 标签时自动构建 Windows / macOS / Linux 三平台
+- 推送 `v*` 标签时自动构建 Windows (x64) / macOS (aarch64) / Linux (x64) 三平台
 - 自动创建 GitHub Release 并上传产物
 - 支持手动触发（`workflow_dispatch`）
 
@@ -145,5 +169,5 @@ lib/
 ---
 
 <p align="center">
-  <sub>Made with ❤️ using Flutter</sub>
+  <sub>Made with ❤️ using Vue 3 + Tauri</sub>
 </p>
