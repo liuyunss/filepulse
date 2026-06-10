@@ -275,7 +275,7 @@ export const useFilePulseStore = defineStore('filepulse', () => {
   }
 
   async function previewRotate(): Promise<{ path: string; before: string; after: string }[]> {
-    const paths = Array.from(selectedPaths.value).filter(p => /\.(jpe?g)$/i.test(p))
+    const paths = Array.from(selectedPaths.value).filter(p => /\.(jpe?g|mp4|mov)$/i.test(p))
     if (paths.length === 0) return []
     const results: { path: string; before: string; after: string }[] = []
     for (const path of paths) {
@@ -288,7 +288,7 @@ export const useFilePulseStore = defineStore('filepulse', () => {
   }
 
   async function rotateSelectedFiles() {
-    const paths = Array.from(selectedPaths.value).filter(p => /\.(jpe?g)$/i.test(p))
+    const paths = Array.from(selectedPaths.value).filter(p => /\.(jpe?g|mp4|mov)$/i.test(p))
     if (paths.length === 0) return
     for (const path of paths) {
       try {

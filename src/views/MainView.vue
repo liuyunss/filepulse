@@ -129,7 +129,7 @@ interface DlgState {
   title: string
   message?: string
   list?: string[]
-  images?: { url: string; name: string; transform: string }[]
+  images?: { url: string; name: string; transform: string; isVideo?: boolean }[]
   moreCount?: number
   kind?: 'info' | 'warning' | 'danger'
   confirmText?: string
@@ -298,19 +298,22 @@ async function applyPreview() {
       const preview = await store.previewRotate()
       store.loading = false
       if (preview.length === 0) {
-        await showDialog({ title: '旋转图片', message: '选中的文件均不支持旋转（仅支持 JPEG 格式）', showCancel: false })
+        await showDialog({ title: '旋转图片', message: '选中的文件均不支持旋转（仅支持 JPEG / MP4 / MOV 格式）', showCancel: false })
         return
       }
       const dir = store.rotateDir === 'cw' ? '顺时针' : '逆时针'
       const angle = store.rotateAngle
       const deg = store.rotateDir === 'cw' ? angle : -angle
+      const isVideo = (p: string) => /\.(mp4|mov)$/i.test(p)
       const imageItems = await Promise.all(preview.map(async r => {
         let url = ''
-        try {
-          const { convertFileSrc } = await import('@tauri-apps/api/core')
-          url = convertFileSrc(r.path)
-        } catch {}
-        return { url, name: relPath(r.path), transform: `rotate(${deg}deg)` }
+        if (!isVideo(r.path)) {
+          try {
+            const { convertFileSrc } = await import('@tauri-apps/api/core')
+            url = convertFileSrc(r.path)
+          } catch {}
+        }
+        return { url, name: relPath(r.path), transform: `rotate(${deg}deg)`, isVideo: isVideo(r.path) }
       }))
       const ok = await showDialog({
         title: `旋转预览 · ${dir}${angle}°`,
@@ -360,10 +363,14 @@ async function applyPreview() {
       const keepNewest = ok
       const toDelete: string[] = []
       for (const g of groups) {
-        const sorted = [...g.files].sort((a, b) => a.modified.localeCompare(b.modified))
-        // sorted[0] = oldest, sorted[last] = newest
-        const kept = keepNewest ? sorted.pop()! : sorted.shift()!
-        toDelete.push(...sorted.map(f => f.path))
+        const sorted = [...g.files].sort((a, b) => {
+          // Primary: modified time, secondary: keep shorter path when times equal
+          const d = a.modified.localeCompare(b.modified)
+          if (d !== 0) return keepNewest ? -d : d
+          return a.path.length - b.path.length
+        })
+        const kept = sorted[0]
+        toDelete.push(...sorted.slice(1).map(f => f.path))
       }
       const deleted = await store.deleteDuplicates(toDelete)
       store.loading = false

@@ -11,12 +11,26 @@
           <div v-for="(img, i) in images" :key="i" class="dlg-thumb-item">
             <div class="dlg-thumb-row">
               <div class="dlg-thumb-side">
-                <img :src="img.url" class="dlg-thumb-img" @error="onImgError($event)" />
+                <template v-if="img.url">
+                  <img :src="img.url" class="dlg-thumb-img" @error="onImgError($event)" />
+                </template>
+                <template v-else>
+                  <div class="dlg-thumb-video">
+                    <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#bbb" stroke-width="1.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                  </div>
+                </template>
                 <span class="dlg-thumb-tag before">旋转前</span>
               </div>
               <span class="dlg-thumb-sep">→</span>
               <div class="dlg-thumb-side">
-                <img :src="img.url" class="dlg-thumb-img" :style="{ transform: img.transform }" @error="onImgError($event)" />
+                <template v-if="img.url">
+                  <img :src="img.url" class="dlg-thumb-img" :style="{ transform: img.transform }" @error="onImgError($event)" />
+                </template>
+                <template v-else>
+                  <div class="dlg-thumb-video" :style="{ transform: img.transform }">
+                    <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#bbb" stroke-width="1.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                  </div>
+                </template>
                 <span class="dlg-thumb-tag after">旋转后</span>
               </div>
             </div>
@@ -45,7 +59,7 @@ const props = withDefaults(defineProps<{
   title: string
   message?: string
   list?: string[]
-  images?: { url: string; name: string; transform: string }[]
+  images?: { url: string; name: string; transform: string; isVideo?: boolean }[]
   moreCount?: number
   kind?: 'info' | 'warning' | 'danger'
   confirmText?: string
@@ -131,6 +145,12 @@ function onCancel() { emit('cancel') }
 .dlg-thumb-img {
   width: 140px; height: 105px; object-fit: cover; border-radius: 6px;
   border: 1px solid var(--border-color, #e0e0e0); background: #f5f5f5;
+  transition: transform .2s;
+}
+.dlg-thumb-video {
+  width: 140px; height: 105px; border-radius: 6px;
+  border: 1px solid var(--border-color, #e0e0e0); background: #1a1a2e;
+  display: flex; align-items: center; justify-content: center;
   transition: transform .2s;
 }
 .dlg-thumb-tag { font-size: 11px; margin-top: 4px; padding: 1px 8px; border-radius: 3px; }

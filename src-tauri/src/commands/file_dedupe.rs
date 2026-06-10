@@ -17,6 +17,7 @@ pub struct DuplicateFile {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DedupeAction {
     pub delete_paths: Vec<String>,
 }
@@ -43,7 +44,7 @@ pub fn find_duplicates(root: String) -> Result<Vec<DuplicateGroup>, String> {
 
     // Phase 2: within same-size groups, compute MD5 to find true duplicates
     let mut by_md5: HashMap<String, Vec<PathBuf>> = HashMap::new();
-    for (size, paths) in by_size {
+    for (_size, paths) in by_size {
         if paths.len() < 2 { continue; }
         let mut size_groups: HashMap<String, Vec<PathBuf>> = HashMap::new();
         for path in &paths {
