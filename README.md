@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_256.png" width="100" alt="FilePulse Icon">
+  <img src="public/icon.png" width="100" alt="FilePulse Icon">
 </p>
 
 <h1 align="center">FilePulse</h1>
@@ -32,7 +32,9 @@
 | ☑️ **Batch Operations** | Select all / individual → batch delete (with confirmation dialog) |
 | 🗑️ **Empty Folder Cleanup** | One-click scan and delete all empty directories |
 | 📂 **Folder Dissolving** | Flatten file structure by keeping N levels of directories — preview before confirm, auto-resolve name conflicts + clean up empty dirs |
-| 💾 **Filter Presets** | Save filter configurations as named rules (up to 5), one-click load, persisted locally |
+| 🔄 **File Rotation** | Rotate image/video files with EXIF-aware orientation correction |
+| 🔍 **Duplicate Detection** | Find and remove duplicate files by MD5 hash |
+| 💾 **Filter Presets** | Save filter configurations as named rules, one-click load, persisted locally |
 
 ## 🚀 Quick Start
 
@@ -49,63 +51,85 @@ Go to the [**Releases page**](https://github.com/liuyunss/filepulse/releases/lat
 ### Build from Source
 
 **Prerequisites:**
-- [Flutter SDK](https://docs.flutter.dev/get-started/install) ≥ 3.0
-- Platform-specific desktop toolchain (see [Flutter Desktop](https://docs.flutter.dev/platform-integration/desktop))
+- [Node.js](https://nodejs.org/) ≥ 18
+- [pnpm](https://pnpm.io/) ≥ 9
+- [Rust](https://www.rust-lang.org/tools/install) (stable)
+- Platform-specific dependencies (see below)
 
 ```bash
 # Clone the repo
 git clone https://github.com/liuyunss/filepulse.git
 cd filepulse
 
-# Install dependencies
-flutter pub get
+# Install frontend dependencies
+pnpm install
 
-# Run (debug mode)
-flutter run -d windows   # Windows
-flutter run -d macos     # macOS
-flutter run -d linux     # Linux
+# Run in dev mode
+pnpm tauri dev
 
 # Build release
-flutter build windows --release
-flutter build macos --release
-flutter build linux --release
+pnpm tauri build
 ```
 
 **Linux additional dependencies:**
 ```bash
-sudo apt-get install -y ninja-build libgtk-3-dev
+sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+  librsvg2-dev patchelf xdg-utils
 ```
 
 ## 🏗️ Project Structure
 
 ```
-lib/
-├── main.dart                  # Entry point
-├── models/
-│   ├── file_item.dart         # File data model
-│   └── filter_rule.dart       # Filter rule model (serializable)
-├── services/
-│   └── file_service.dart      # Core logic (scan / filter / delete / dissolve)
-└── widgets/
-    └── app.dart               # All UI (sidebar filters + file list + tools)
+├── src/                        # Vue 3 frontend
+│   ├── App.vue                 # Root component
+│   ├── main.ts                 # Entry point
+│   ├── components/
+│   │   ├── DialogBox.vue       # Confirmation dialogs
+│   │   └── Sidebar.vue         # Filter sidebar
+│   ├── views/
+│   │   └── MainView.vue        # Main file list view
+│   ├── stores/
+│   │   └── filepulse.ts        # Pinia state management
+│   ├── types/
+│   │   └── index.ts            # TypeScript type definitions
+│   └── styles/
+│       └── main.css            # Global styles
+├── src-tauri/                  # Rust backend (Tauri 2)
+│   ├── src/
+│   │   ├── lib.rs              # Plugin registration & command handlers
+│   │   ├── main.rs             # Entry point
+│   │   └── commands/
+│   │       ├── file_scan.rs    # Recursive folder scanning
+│   │       ├── file_delete.rs  # Batch delete & empty dir cleanup
+│   │       ├── file_dissolve.rs # Folder flattening
+│   │       ├── file_dedupe.rs  # Duplicate detection (MD5)
+│   │       ├── file_rotate.rs  # Image/video rotation
+│   │       ├── file_reveal.rs  # Open in system file manager
+│   │       └── rule_store.rs   # Filter preset persistence
+│   ├── Cargo.toml
+│   └── tauri.conf.json
+├── package.json
+├── vite.config.ts
+└── pnpm-lock.yaml
 ```
 
 ## 🛠️ Tech Stack
 
-| Technology | Purpose |
-|------------|---------|
-| [Flutter](https://flutter.dev) | Cross-platform desktop UI (Material Design 3) |
-| `dart:io` | Direct filesystem operations (no server) |
-| [provider](https://pub.dev/packages/provider) | State management |
-| [shared_preferences](https://pub.dev/packages/shared_preferences) | Local config persistence |
-| [desktop_drop](https://pub.dev/packages/desktop_drop) | Drag & drop support |
-| [file_picker](https://pub.dev/packages/file_picker) | Native folder picker |
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| Frontend | [Vue 3](https://vuejs.org/) + [TypeScript](https://www.typescriptlang.org/) | Reactive UI |
+| UI Components | [Naive UI](https://www.naiveui.com/) | Component library |
+| State Management | [Pinia](https://pinia.vuejs.org/) | Centralized state |
+| CSS | [UnoCSS](https://unocss.dev/) | Atomic CSS engine |
+| Build Tool | [Vite 6](https://vitejs.dev/) | Frontend bundler |
+| Backend | [Tauri 2](https://v2.tauri.app/) (Rust) | Native file operations |
+| CI/CD | [GitHub Actions](https://docs.github.com/en/actions) | Multi-platform auto-build |
 
 ## 🔄 CI/CD
 
 Powered by **GitHub Actions**:
 
-- Auto-builds for Windows / macOS / Linux on `v*` tag push
+- Auto-builds for Windows (x64) / macOS (aarch64) / Linux (x64) on `v*` tag push
 - Auto-creates GitHub Release with platform artifacts
 - Manual trigger supported (`workflow_dispatch`)
 
@@ -145,5 +169,5 @@ This project is licensed under the [MIT License](LICENSE).
 ---
 
 <p align="center">
-  <sub>Made with ❤️ using Flutter</sub>
+  <sub>Made with ❤️ using Vue 3 + Tauri</sub>
 </p>
