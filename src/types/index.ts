@@ -30,6 +30,7 @@ export interface FilterRule {
 }
 
 export interface DissolveResult {
-  original: string
-  new_path: string
+  name: string       // relative path from root
+  target: string     // target relative path (may differ if renamed)
+  action: 'move' | 'skip'  // move=will be moved, skip=duplicate skipped
 }

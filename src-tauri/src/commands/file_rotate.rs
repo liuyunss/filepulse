@@ -37,12 +37,6 @@ pub fn rotate_file(path: String, angle: u16, direction: String) -> Result<Rotate
     write_orientation(&mut new_data, exif_offset, new_orientation)
         .map_err(|e| format!("Write EXIF error: {}", e))?;
 
-    // Create backup
-    let backup_path = format!("{}.bak", path.display());
-    if !Path::new(&backup_path).exists() {
-        fs::write(&backup_path, &data).ok();
-    }
-
     fs::write(path, &new_data).map_err(|e| format!("Write file error: {}", e))?;
 
     let desc = format!(
@@ -225,8 +219,10 @@ fn calc_orientation(current: u16, angle: u16, direction: &str) -> u16 {
     if steps == 0 {
         return current;
     }
-    let cw_map = [0, 6, 3, 8, 0, 0, 1, 0, 6]; // index = current orientation, value = CW result
-    let ccw_map = [0, 8, 3, 6, 0, 0, 1, 0, 8];
+    // Correct EXIF orientation composition for 90° rotations
+    // index = current orientation (1-8), value = result after one step
+    let cw_map  = [0, 6, 7, 8, 5, 2, 3, 4, 1]; // 90° CW
+    let ccw_map = [0, 8, 5, 6, 7, 4, 1, 2, 3]; // 90° CCW
 
     let mut o = current;
     for _ in 0..steps {

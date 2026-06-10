@@ -52,3 +52,63 @@ fn is_system_path(path: &str) -> bool {
     ];
     system_dirs.iter().any(|d| path.starts_with(d))
 }
+
+#[tauri::command]
+pub fn delete_empty_dirs(root: String, dry_run: bool) -> Result<DeleteResult, String> {
+    let root_path = PathBuf::from(&root);
+    if !root_path.exists() || !root_path.is_dir() {
+        return Err(format!("Not a directory: {}", root));
+    }
+
+    let mut deleted = Vec::new();
+    let mut failed = Vec::new();
+    collect_empty_dirs(&root_path, &root_path, &mut deleted, &mut failed, dry_run)?;
+    Ok(DeleteResult { deleted, failed })
+}
+
+fn collect_empty_dirs(
+    root: &PathBuf,
+    current: &PathBuf,
+    deleted: &mut Vec<String>,
+    failed: &mut Vec<String>,
+    dry_run: bool,
+) -> Result<(), String> {
+    let entries: Vec<PathBuf> = std::fs::read_dir(current)
+        .map_err(|e| format!("Failed to read {}: {}", current.display(), e))?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .collect();
+
+    // Process children first (bottom-up)
+    for path in &entries {
+        if path.is_dir() {
+            collect_empty_dirs(root, path, deleted, failed, dry_run)?;
+        }
+    }
+
+    // Skip root itself
+    if current == root {
+        return Ok(());
+    }
+
+    // Check if this directory is now empty
+    let is_empty = std::fs::read_dir(current)
+        .map(|mut d| d.next().is_none())
+        .unwrap_or(false);
+
+    if is_empty {
+        let path_str = current.to_string_lossy().to_string();
+        if dry_run {
+            deleted.push(path_str);
+        } else {
+            match trash::delete(current) {
+                Ok(_) => deleted.push(path_str),
+                Err(e) => {
+                    eprintln!("Failed to trash empty dir {}: {}", path_str, e);
+                    failed.push(path_str);
+                }
+            }
+        }
+    }
+
+    Ok(())
+}

@@ -1,6 +1,6 @@
 pub mod commands;
 
-use commands::{file_delete, file_dissolve, file_rotate, file_scan, rule_store};
+use commands::{file_dedupe, file_delete, file_dissolve, file_reveal, file_rotate, file_scan, rule_store};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -13,8 +13,12 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         .invoke_handler(tauri::generate_handler![
             file_scan::scan_files,
+            file_dedupe::find_duplicates,
+            file_dedupe::delete_duplicates,
             file_delete::delete_files,
+            file_delete::delete_empty_dirs,
             file_dissolve::dissolve_folder,
+            file_reveal::show_in_folder,
             file_rotate::rotate_file,
             file_rotate::preview_rotate,
             rule_store::load_rules,

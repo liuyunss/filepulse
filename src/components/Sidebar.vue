@@ -80,7 +80,7 @@
       <div class="side-title">工具集合 <span class="tip-icon" data-tip="工具模式与筛选模式互斥，启用工具时将禁用筛选条件">!</span></div>
       <div class="tool-box">
         <label class="tool-row" style="border-left-color:#ff4d4f">
-          <input type="checkbox" v-model="deleteEmpty" /><span>删除空文件夹</span>
+          <input type="checkbox" v-model="store.deleteEmpty" /><span>删除空文件夹</span>
         </label>
         <label class="tool-row" style="border-left-color:#fa8c16">
           <input type="checkbox" v-model="store.dissolveMode" /><span>解散文件夹</span>
@@ -89,10 +89,14 @@
           <span class="tool-txt">级目录</span>
           <span class="tip-icon" data-tip="0 级 → a/b/c.txt 变为 /c.txt&#10;1 级 → a/b/c.txt 变为 a/c.txt&#10;2 级 → a/b/c.txt 变为 a/b/c.txt">?</span>
         </label>
+        <label class="tool-row" style="border-left-color:#722ed1">
+          <input type="checkbox" v-model="store.dedupeMode" /><span>删除重复文件</span>
+          <span class="tip-icon" data-tip="检测文件夹内完全相同的文件&#10;支持保留最新或最旧的文件">?</span>
+        </label>
         <label class="tool-row" style="border-left-color:#0ea5e9">
-          <input type="checkbox" v-model="rotateMode" /><span>旋转</span>
-          <select v-model="rotateDir" class="sel"><option value="cw">顺时针</option><option value="ccw">逆时针</option></select>
-          <select v-model="rotateAngle" class="sel"><option :value="90">90°</option><option :value="180">180°</option><option :value="270">270°</option></select>
+          <input type="checkbox" v-model="store.rotateMode" /><span>旋转</span>
+          <select v-model="store.rotateDir" class="sel"><option value="cw">顺时针</option><option value="ccw">逆时针</option></select>
+          <select v-model="store.rotateAngle" class="sel"><option :value="90">90°</option><option :value="180">180°</option><option :value="270">270°</option></select>
           <span class="tip-icon" data-tip="顺时针90°→图片右转&#10;修改JPEG的EXIF元信息实现">?</span>
         </label>
       </div>
@@ -111,12 +115,8 @@ const ruleName = ref('')
 const hoverIdx = ref(-1)
 const filterEdit = ref(false)
 const ruleEdit = ref(false)
-const deleteEmpty = ref(false)
-const rotateMode = ref(false)
-const rotateAngle = ref(90)
-const rotateDir = ref<'cw' | 'ccw'>('cw')
 
-const toolActive = computed(() => deleteEmpty.value || store.dissolveMode || rotateMode.value)
+const toolActive = computed(() => store.deleteEmpty || store.dissolveMode || store.rotateMode || store.dedupeMode)
 
 const colors: Record<string, string> = { name:'#1890ff', extension:'#52c41a', size:'#fa8c16', date:'#8b5cf6' }
 const filterTypes = [
@@ -168,10 +168,10 @@ onMounted(()=>store.loadRules())
 
 <style scoped>
 .sidebar { width:320px; min-width:320px; background:var(--bg-secondary); border-right:1px solid var(--border-color); display:flex; flex-direction:column; overflow:hidden; height:100vh; }
-.side-section { padding:10px 14px; border-bottom:1px solid var(--border-color); display:flex; flex-direction:column; overflow:hidden; }
-.side-section:first-child { flex:6; }
-.side-section:nth-child(2) { flex:6; }
-.side-tools { flex:4; border-bottom:none; }
+.side-section { padding:10px 14px; border-bottom:1px solid var(--border-color); display:flex; flex-direction:column; overflow:visible; }
+.side-section:first-child { flex:1; }
+.side-section:nth-child(2) { flex:1; }
+.side-tools { flex:1; border-bottom:none; }
 .disabled { opacity:.45; pointer-events:none; }
 .side-title { font-size:12px; font-weight:600; color:var(--text-primary); margin-bottom:8px; display:flex; align-items:center; gap:5px; }
 
@@ -230,5 +230,5 @@ onMounted(()=>store.loadRules())
 .tool-txt { font-size:13px; color:var(--text-muted); }
 
 .tip-icon { display:inline-flex; align-items:center; justify-content:center; width:17px; height:17px; border-radius:50%; background:#e8e8e8; color:#999; font-size:10px; font-weight:700; cursor:help; flex-shrink:0; position:relative; }
-.tip-icon:hover::after { content:attr(data-tip); position:fixed; background:#333; color:#fff; padding:8px 12px; border-radius:6px; font-size:12px; font-weight:400; white-space:pre-line; z-index:9999; pointer-events:none; min-width:200px; max-width:280px; box-shadow:0 2px 8px rgba(0,0,0,.15); transform:translateX(24px) translateY(-8px); }
+.tip-icon:hover::after { content:attr(data-tip); position:absolute; bottom:calc(100% + 8px); left:50%; transform:translateX(-50%); background:#333; color:#fff; padding:8px 12px; border-radius:6px; font-size:12px; font-weight:400; white-space:pre-line; z-index:9999; pointer-events:none; min-width:200px; max-width:280px; box-shadow:0 2px 8px rgba(0,0,0,.15); }
 </style>

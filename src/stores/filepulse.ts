@@ -1,11 +1,19 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, shallowRef, computed } from 'vue'
 import type { FileItem, FilterCondition, FilterRule, DissolveResult } from '@/types'
+
+interface RotatePreview {
+  path: string
+  original_orientation: number
+  new_orientation: number
+  description: string
+}
 import { invoke } from '@tauri-apps/api/core'
 
 export const useFilePulseStore = defineStore('filepulse', () => {
   // State
-  const files = ref<FileItem[]>([])
+  // shallowRef: avoids deep Vue Proxy wrapping for each file item (~10-100x faster for large arrays)
+  const files = shallowRef<FileItem[]>([])
   const selectedPaths = ref<Set<string>>(new Set())
   const currentPath = ref('')
   const recursive = ref(true)
@@ -24,6 +32,15 @@ export const useFilePulseStore = defineStore('filepulse', () => {
   const dissolveMode = ref(false)
   const keepLevels = ref(1)
 
+  // Tools
+  const deleteEmpty = ref(false)
+  const rotateMode = ref(false)
+  const rotateAngle = ref(90)
+  const rotateDir = ref<'cw' | 'ccw'>('cw')
+
+  // Dedupe
+  const dedupeMode = ref(false)
+
   // Rules
   const rules = ref<FilterRule[]>([])
 
@@ -33,10 +50,8 @@ export const useFilePulseStore = defineStore('filepulse', () => {
 
   // Computed
   const filteredFiles = computed(() => {
-    let result = files.value
-    if (previewMode.value) {
-      result = result.filter(file => matchesFilters(file))
-    }
+    let result = files.value.filter(f => !f.is_dir)
+    if (previewMode.value) result = result.filter(file => matchesFilters(file))
     result = [...result].sort((a, b) => {
       let cmp = 0
       switch (sortKey.value) {
@@ -103,9 +118,11 @@ export const useFilePulseStore = defineStore('filepulse', () => {
     loading.value = true
     currentPath.value = path
     try {
-      files.value = await invoke<FileItem[]>('scan_files', {
-        options: { path, recursive: recursive.value }
-      })
+      console.time('scan')
+      const result = await invoke<FileItem[]>('scan_files', { options: { path, recursive: recursive.value } })
+      console.timeEnd('scan')
+      console.log('Files count:', result.length)
+      files.value = result
       selectedPaths.value.clear()
     } catch (e) {
       console.error('Scan failed:', e)
@@ -136,7 +153,8 @@ export const useFilePulseStore = defineStore('filepulse', () => {
           break
         }
         case 'size': {
-          const threshold = parseSize(filter.value || '0', filter.unit || 'MB')
+          if (!filter.value || filter.value === '0' || filter.value === 0) { match = false; break }
+          const threshold = parseSize(String(filter.value || '0'), filter.unit || 'MB')
           switch (filter.operator) {
             case '>': match = file.size > threshold; break
             case '<': match = file.size < threshold; break
@@ -245,6 +263,61 @@ export const useFilePulseStore = defineStore('filepulse', () => {
     } catch (e) { console.error('Dissolve execute failed:', e); return [] }
   }
 
+  async function deleteEmptyDirs(): Promise<{ deleted: string[]; failed: string[] }> {
+    if (!currentPath.value) return { deleted: [], failed: [] }
+    try {
+      const result = await invoke<{ deleted: string[]; failed: string[] }>('delete_empty_dirs', {
+        root: currentPath.value, dryRun: false,
+      })
+      await scanFiles(currentPath.value)
+      return result
+    } catch (e) { console.error('Delete empty dirs failed:', e); return { deleted: [], failed: [] } }
+  }
+
+  async function previewRotate(): Promise<{ path: string; before: string; after: string }[]> {
+    const paths = Array.from(selectedPaths.value).filter(p => /\.(jpe?g)$/i.test(p))
+    if (paths.length === 0) return []
+    const results: { path: string; before: string; after: string }[] = []
+    for (const path of paths) {
+      try {
+        const r = await invoke<RotatePreview>('preview_rotate', { path, angle: rotateAngle.value, direction: rotateDir.value })
+        results.push({ path, before: orientationName(r.original_orientation), after: orientationName(r.new_orientation) })
+      } catch (e) { console.error('Rotate preview failed:', path, e) }
+    }
+    return results
+  }
+
+  async function rotateSelectedFiles() {
+    const paths = Array.from(selectedPaths.value).filter(p => /\.(jpe?g)$/i.test(p))
+    if (paths.length === 0) return
+    for (const path of paths) {
+      try {
+        await invoke('rotate_file', { path, angle: rotateAngle.value, direction: rotateDir.value })
+      } catch (e) { console.error('Rotate failed:', path, e) }
+    }
+  }
+
+  function orientationName(v: number): string {
+    const m: Record<number, string> = { 1:'正常', 2:'水平翻转', 3:'180°', 4:'垂直翻转', 5:'顺时针90°+翻转', 6:'顺时针90°', 7:'逆时针90°+翻转', 8:'逆时针90°' }
+    return m[v] || `未知(${v})`
+  }
+
+  interface DupGroup { files: { path: string; modified: string }[]; size: number }
+
+  async function findDuplicates(): Promise<DupGroup[]> {
+    if (!currentPath.value) return []
+    try { return await invoke<DupGroup[]>('find_duplicates', { root: currentPath.value }) }
+    catch (e) { console.error('Find duplicates failed:', e); return [] }
+  }
+
+  async function deleteDuplicates(deletePaths: string[]): Promise<number> {
+    try {
+      await invoke<string[]>('delete_duplicates', { action: { deletePaths } })
+      await scanFiles(currentPath.value)
+      return deletePaths.length
+    } catch (e) { console.error('Delete duplicates failed:', e); return 0 }
+  }
+
   async function loadRules() {
     try { rules.value = await invoke<FilterRule[]>('load_rules') }
     catch (e) { console.error('Load rules failed:', e) }
@@ -281,10 +354,12 @@ export const useFilePulseStore = defineStore('filepulse', () => {
 
   return {
     files, selectedPaths, currentPath, recursive, loading, previewMode,
-    filters, dissolveMode, keepLevels, rules, sortKey, sortAsc,
+    filters, dissolveMode, keepLevels, deleteEmpty, rotateMode, rotateAngle, rotateDir, dedupeMode,
+    rules, sortKey, sortAsc,
     filteredFiles, selectedCount, totalCount, matchedCount,
     scanFiles, toggleSelect, selectAll, deleteSelected,
-    dissolvePreview, dissolveExecute,
+    dissolvePreview, dissolveExecute, deleteEmptyDirs, previewRotate, rotateSelectedFiles,
+    findDuplicates, deleteDuplicates,
     loadRules, saveRule, deleteRule, loadRule,
     addFilter, removeFilter, clearFilters, resetFilters, setSort,
   }
