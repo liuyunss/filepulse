@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FilePulse</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- 顶栏 -->
+        <div id="topbar">
+            <button id="btn-open">📂 选择文件夹</button>
+            <span id="folder-path">未选择</span>
+            <span id="file-count">0 个文件</span>
+            <div class="spacer"></div>
+            <button id="btn-preview">预览</button>
+            <button id="btn-delete" class="btn-danger">删除选中</button>
+            <button id="btn-advanced">更多工具</button>
+        </div>
+
+        <!-- 筛选栏（始终显示） -->
+        <div id="filter-bar">
+            <label class="filter-item">
+                <input type="checkbox" id="size-filter"> 大小
+                <select id="size-op"><option value="gt">&gt;</option><option value="lt">&lt;</option></select>
+                <input type="number" id="size-value" value="10">
+                <select id="size-unit"><option value="MB">MB</option><option value="KB">KB</option><option value="GB">GB</option></select>
+            </label>
+            <label class="filter-item">
+                <input type="checkbox" id="ext-filter"> 后缀
+                <input type="text" id="ext-value" placeholder=".mp4,.avi">
+            </label>
+            <label class="filter-item">
+                <input type="checkbox" id="date-filter">
+                <input type="number" id="date-value" value="7"> 天内
+            </label>
+            <span id="filter-stats"></span>
+        </div>
+
+        <!-- 表格 -->
+        <div id="table-wrap">
+            <table id="file-table">
+                <thead><tr>
+                    <th class="col-chk"><input type="checkbox" id="select-all"></th>
+                    <th class="col-name sortable" data-sort="name">文件名 <span class="arr"></span></th>
+                    <th class="col-size sortable" data-sort="size">大小 <span class="arr"></span></th>
+                    <th class="col-type sortable" data-sort="extension">类型 <span class="arr"></span></th>
+                    <th class="col-date sortable" data-sort="modified">修改时间 <span class="arr"></span></th>
+                    <th class="col-path">路径</th>
+                </tr></thead>
+                <tbody id="file-tbody"></tbody>
+            </table>
+            <div id="empty-state">点击「📂 选择文件夹」开始</div>
+        </div>
+
+        <!-- 底部状态 -->
+        <div id="statusbar">
+            <span id="status-text">就绪</span>
+        </div>
+
+        <!-- 更多工具面板 -->
+        <div id="tools-panel" style="display:none">
+            <div class="tools-tabs">
+                <span class="tab active" data-tab="cleanup">空文件清理</span>
+                <span class="tab" data-tab="dissolve">解散文件夹</span>
+                <span class="tab" data-tab="rules">规则</span>
+                <span class="tab-close" id="btn-close-tools">✕</span>
+            </div>
+            <div class="tab-content" id="tab-cleanup">
+                <input type="text" id="empty-ext-value" value=".txt,.log,.tmp" placeholder="后缀,逗号分隔">
+                <button id="btn-scan-empty">扫描</button>
+                <button id="btn-delete-empty" class="btn-danger" disabled>删除</button>
+                <div id="empty-cleanup-preview" style="display:none"><div id="empty-cleanup-count"></div><div id="empty-cleanup-list"></div></div>
+            </div>
+            <div class="tab-content" id="tab-dissolve" style="display:none">
+                保留 <select id="keep-levels"><option value="0">0</option><option value="1" selected>1</option><option value="2">2</option><option value="3">3</option></select> 级
+                <button id="btn-preview-dissolve">预览</button>
+                <div id="dissolve-preview" style="display:none"></div>
+            </div>
+            <div class="tab-content" id="tab-rules" style="display:none">
+                <button id="btn-save-rule">保存当前</button>
+                <button id="btn-delete-rule" class="btn-danger">删除规则</button>
+                <div id="rules-list"></div>
+            </div>
+        </div>
+
+        <!-- 预览弹窗 -->
+        <div id="preview-overlay" style="display:none">
+            <div id="preview-dialog">
+                <div class="preview-header">
+                    <span>预览结果 — <span id="preview-count">0</span> 个文件</span>
+                    <button id="btn-close-preview" class="btn-close">✕</button>
+                </div>
+                <div id="preview-body">
+                    <table id="preview-table">
+                        <thead><tr>
+                            <th class="pv-chk"><input type="checkbox" id="pv-select-all" checked></th>
+                            <th class="pv-name sortable" data-sort="name">文件名</th>
+                            <th class="pv-size sortable" data-sort="size">大小</th>
+                            <th class="pv-type">类型</th>
+                            <th class="pv-path">路径</th>
+                        </tr></thead>
+                        <tbody id="preview-tbody"></tbody>
+                    </table>
+                </div>
+                <div class="preview-footer">
+                    <button id="btn-cancel-preview">取消</button>
+                    <button id="btn-confirm-preview" class="btn-danger">确认删除</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
