@@ -1,13 +1,15 @@
-name: Build & Release
+name: Build
 
 on:
-  push:
-    tags:
-      - 'v*'
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
   contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
@@ -15,160 +17,76 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            platform: linux
-            artifact_name: FilePulse-linux
-          - os: macos-latest
-            platform: macos
-            artifact_name: FilePulse-macos
-          - os: windows-latest
-            platform: windows
-            artifact_name: FilePulse-windows
+          - platform: macos-latest
+            args: --target aarch64-apple-darwin
+            label: macos-aarch64
+          - platform: macos-15-intel
+            args: --target x86_64-apple-darwin
+            label: macos-x86_64
+          - platform: windows-latest
+            args: --target x86_64-pc-windows-msvc
+            label: windows-x86_64
+          - platform: windows-latest
+            args: --target aarch64-pc-windows-msvc
+            label: windows-aarch64
+          - platform: ubuntu-22.04
+            args: --target x86_64-unknown-linux-gnu
+            label: linux-x86_64
+          - platform: ubuntu-22.04-arm
+            args: --target aarch64-unknown-linux-gnu
+            label: linux-aarch64
 
-    runs-on: ${{ matrix.os }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
-
-      - name: Flutter info
-        run: flutter doctor -v
-
-      - name: Install dependencies
-        run: flutter pub get
-
-      # Linux 桌面构建需要 GTK3 和 Ninja
-      - name: Install Linux desktop deps
-        if: matrix.platform == 'linux'
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ninja-build libgtk-3-dev
-
-      # ─── Linux Build ─────────────────────────────────────
-      - name: Build Linux
-        if: matrix.platform == 'linux'
-        run: flutter build linux --release
-
-      - name: Package Linux (tar.gz)
-        if: matrix.platform == 'linux'
-        run: |
-          mkdir -p release
-          cd build/linux/x64/release/bundle
-          tar -czf "${GITHUB_WORKSPACE}/release/FilePulse-linux-x64.tar.gz" .
-
-      - name: Upload Linux artifacts
-        if: matrix.platform == 'linux'
-        uses: actions/upload-artifact@v4
-        with:
-          name: artifacts-linux
-          path: release/
-
-      # ─── macOS Build ─────────────────────────────────────
-      - name: Build macOS
-        if: matrix.platform == 'macos'
-        run: flutter build macos --release
-
-      - name: Package macOS (zip)
-        if: matrix.platform == 'macos'
-        run: |
-          mkdir -p release
-          cd build/macos/Build/Products/Release
-          zip -r "${GITHUB_WORKSPACE}/release/FilePulse-macos.zip" FilePulse.app
-
-      - name: Upload macOS artifacts
-        if: matrix.platform == 'macos'
-        uses: actions/upload-artifact@v4
-        with:
-          name: artifacts-macos
-          path: release/
-
-      # ─── Windows Build ───────────────────────────────────
-      - name: Build Windows
-        if: matrix.platform == 'windows'
-        run: flutter build windows --release
-
-      - name: Package Windows (zip)
-        if: matrix.platform == 'windows'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path release
-          Compress-Archive -Path "build\windows\x64\runner\Release\*" `
-            -DestinationPath "$env:GITHUB_WORKSPACE\release\FilePulse-windows-x64.zip"
-
-      - name: Upload Windows artifacts
-        if: matrix.platform == 'windows'
-        uses: actions/upload-artifact@v4
-        with:
-          name: artifacts-windows
-          path: release/
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ${{ matrix.platform }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - name: Query version number
-        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
+      - uses: pnpm/action-setup@v4
 
-      - name: Download Linux artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/setup-node@v5
         with:
-          name: artifacts-linux
-          path: artifacts/linux
+          node-version: 22
+          cache: pnpm
 
-      - name: Download macOS artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: artifacts-macos
-          path: artifacts/macos
+      - uses: dtolnay/rust-toolchain@stable
 
-      - name: Download Windows artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: artifacts-windows
-          path: artifacts/windows
-
-      - name: Rename artifacts
+      - name: Add cross-compilation target
+        if: contains(matrix.args, 'aarch64-pc-windows-msvc')
+        shell: bash
         run: |
-          # Linux
-          f=$(find artifacts/linux -name "*.tar.gz" | head -1)
-          [ -n "$f" ] && mv "$f" "FilePulse_${{ env.version }}_linux_x64.tar.gz"
-          # macOS
-          f=$(find artifacts/macos -name "*.zip" | head -1)
-          [ -n "$f" ] && mv "$f" "FilePulse_${{ env.version }}_macos.zip"
-          # Windows
-          f=$(find artifacts/windows -name "*.zip" | head -1)
-          [ -n "$f" ] && mv "$f" "FilePulse_${{ env.version }}_windows_x64.zip"
+          TARGET=$(echo '${{ matrix.args }}' | sed 's/.*--target \([^ ]*\).*/\1/')
+          rustup target add "$TARGET"
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ env.version }}
-          name: FilePulse v${{ env.version }}
-          body: |
-            ## FilePulse v${{ env.version }}
+      - uses: swatinem/rust-cache@v2
 
-            跨平台文件分析筛选工具。
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          export NEEDRESTART_SUSPEND=1
+          export DEBIAN_FRONTEND=noninteractive
+          sudo apt-get update
+          sudo -E apt-get install -y \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf xdg-utils
 
-            ### 下载
-            - **Windows**: `FilePulse_${{ env.version }}_windows_x64.zip` (解压后运行)
-            - **macOS**: `FilePulse_${{ env.version }}_macos.zip` (解压后运行 `FilePulse.app`)
-            - **Linux**: `FilePulse_${{ env.version }}_linux_x64.tar.gz` (解压后运行)
-          draft: false
-          prerelease: false
-          files: |
-            FilePulse_${{ env.version }}_linux_x64.tar.gz
-            FilePulse_${{ env.version }}_macos.zip
-            FilePulse_${{ env.version }}_windows_x64.zip
+      - run: pnpm install
+
+      - uses: tauri-apps/tauri-action@v0
+        id: tauri
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.event.release.tag_name || '' }}
+          releaseId: ${{ github.event_name == 'release' && github.event.release.id || '' }}
+          includeUpdaterJson: false
+          args: ${{ matrix.args }}
+
+      - name: Upload build artifacts (manual trigger only)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v6
+        with:
+          name: filepulse-${{ matrix.label }}
+          path: "${{ join(fromJSON(steps.tauri.outputs.artifactPaths), '\\n') }}"
+          retention-days: 7
