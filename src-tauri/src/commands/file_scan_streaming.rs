@@ -14,7 +14,7 @@ pub enum ScanEvent {
     /// Total file count known after WalkDir phase
     #[serde(rename = "total")]
     Total { total: usize },
-    /// Batch of scanned items (max batch_size per push)
+    /// Batch of scanned items (may be empty for progress-only updates)
     #[serde(rename = "batch")]
     Batch {
         items: Vec<FileItem>,
@@ -45,6 +45,52 @@ pub async fn scan_files_streaming(
     .map_err(|e| format!("Scan task panicked: {}", e))?;
 
     result
+}
+
+/// Extract metadata for a single path entry
+fn extract_metadata(path: &PathBuf, non_empty_dirs: &HashSet<PathBuf>, recursive: bool) -> Option<FileItem> {
+    let meta = std::fs::metadata(path).ok()?;
+
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let extension = path
+        .extension()
+        .map(|e| e.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let modified = meta
+        .modified()
+        .map(|t| {
+            let datetime: chrono::DateTime<chrono::Local> = t.into();
+            datetime.format("%Y-%m-%d %H:%M:%S").to_string()
+        })
+        .unwrap_or_default();
+
+    let is_dir = meta.is_dir();
+    let is_empty = if is_dir {
+        if recursive {
+            !non_empty_dirs.contains(path)
+        } else {
+            path.read_dir()
+                .map(|mut e| e.next().is_none())
+                .unwrap_or(true)
+        }
+    } else {
+        false
+    };
+
+    Some(FileItem {
+        path: path.to_string_lossy().to_string(),
+        name,
+        size: meta.len(),
+        is_dir,
+        is_empty,
+        modified,
+        extension,
+    })
 }
 
 fn scan_files_streaming_sync(
@@ -81,7 +127,7 @@ fn scan_files_streaming_sync(
         return Ok(());
     }
 
-    // Send total count early so frontend can show determinate progress
+    // Send total count so frontend shows determinate progress bar immediately
     let _ = on_progress.send(ScanEvent::Total {
         total: total_entries,
     });
@@ -96,79 +142,27 @@ fn scan_files_streaming_sync(
         }
     }
 
-    // ===== Phase 3: Parallel metadata extraction (rayon) =====
+    let _ = on_progress.send(ScanEvent::Batch {
+        items: vec![], processed: 0, total: total_entries,
+    });
+
+    // ===== Phase 3+4: Parallel metadata extraction + streaming =====
     let paths: Vec<PathBuf> = entries.iter().map(|e| e.path().to_path_buf()).collect();
 
-    let meta_results: Vec<Option<FileItem>> = paths
-        .par_iter()
-        .map(|path| {
-            let meta = std::fs::metadata(path).ok()?;
-
-            let name = path
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_default();
-
-            let extension = path
-                .extension()
-                .map(|e| e.to_string_lossy().to_string())
-                .unwrap_or_default();
-
-            let modified = meta
-                .modified()
-                .map(|t| {
-                    let datetime: chrono::DateTime<chrono::Local> = t.into();
-                    datetime.format("%Y-%m-%d %H:%M:%S").to_string()
-                })
-                .unwrap_or_default();
-
-            let is_dir = meta.is_dir();
-            let is_empty = if is_dir {
-                if recursive {
-                    !non_empty_dirs.contains(path)
-                } else {
-                    path.read_dir()
-                        .map(|mut e| e.next().is_none())
-                        .unwrap_or(true)
-                }
-            } else {
-                false
-            };
-
-            Some(FileItem {
-                path: path.to_string_lossy().to_string(),
-                name,
-                size: meta.len(),
-                is_dir,
-                is_empty,
-                modified,
-                extension,
-            })
-        })
-        .collect();
-
-    // ===== Phase 4: Stream results in batches via Channel =====
-    let mut batch: Vec<FileItem> = Vec::with_capacity(batch_size);
+    // Process in parallel chunks and stream results immediately
+    let chunk_size = std::cmp::max(batch_size, 200);
     let mut processed = 0usize;
 
-    for item in meta_results.into_iter().flatten() {
-        batch.push(item);
-        processed += 1;
+    for chunk in paths.chunks(chunk_size) {
+        let chunk_results: Vec<FileItem> = chunk
+            .par_iter()
+            .filter_map(|path| extract_metadata(path, &non_empty_dirs, recursive))
+            .collect();
 
-        if batch.len() >= batch_size {
-            let _ = on_progress.send(ScanEvent::Batch {
-                items: std::mem::take(&mut batch),
-                processed,
-                total: total_entries,
-            });
-            batch = Vec::with_capacity(batch_size);
-        }
-    }
+        processed += chunk_results.len();
 
-    // Flush remaining items
-    if !batch.is_empty() {
         let _ = on_progress.send(ScanEvent::Batch {
-            items: batch,
+            items: chunk_results,
             processed,
             total: total_entries,
         });

@@ -21,15 +21,56 @@
           <em v-if="store.selectedCount > 0">{{ store.selectedCount }}</em>
         </button>
       </div>
+      <!-- 顶部进度条 -->
+      <Transition name="tb-progress-fade">
+        <div v-if="store.progress.active" class="tb-progress">
+          <span class="tb-progress-label">{{ progressLabel }}</span>
+          <div class="tb-progress-bar">
+            <div v-if="store.progress.total === 0" class="progress-bar-track progress-bar-indeterminate">
+              <div class="progress-bar-fill-indeterminate" />
+            </div>
+            <div v-else class="progress-bar-track">
+              <div class="progress-bar-fill" :style="{ width: progressPercent + '%' }" />
+            </div>
+          </div>
+          <span class="tb-progress-time">{{ store.progress.elapsed }}</span>
+          <span v-if="store.progress.total > 0 && store.progress.estimated" class="tb-progress-eta">剩余 {{ store.progress.estimated }}</span>
+        </div>
+      </Transition>
     </div>
 
     <!-- 空状态导入区域 -->
-    <div v-if="store.files.length === 0 && !store.loading" class="table-scroll table-empty">
+    <div v-if="store.files.length === 0 && !store.progress.active" class="table-scroll table-empty">
       <div class="import-zone" :class="{ over: dragging }" @click="selectFolder">
         <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
           <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/><line x1="12" y1="11" x2="12" y2="17"/><polyline points="9 14 12 17 15 14"/>
         </svg>
         <p>选择文件夹或拖拽到此处导入</p>
+      </div>
+    </div>
+
+    <!-- 扫描进度区（空状态时） -->
+    <div v-else-if="store.files.length === 0 && store.progress.active && store.progress.operation === 'scan'" class="table-scroll table-empty">
+      <div class="scan-progress-zone">
+        <div class="scan-progress-icon">
+          <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="var(--accent-color)" stroke-width="1.5" opacity="0.6">
+            <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/><line x1="12" y1="11" x2="12" y2="17"/><polyline points="9 14 12 17 15 14"/>
+          </svg>
+        </div>
+        <p class="scan-progress-title">正在扫描文件夹...</p>
+        <p class="scan-progress-path" :title="store.currentPath">{{ store.currentPath }}</p>
+        <div class="scan-progress-bar">
+          <div class="progress-bar-track" :class="{ 'progress-bar-indeterminate': store.progress.total === 0 }">
+            <div v-if="store.progress.total === 0" class="progress-bar-fill-indeterminate" />
+            <div v-else class="progress-bar-fill" :style="{ width: progressPercent + '%' }" />
+          </div>
+        </div>
+        <div class="scan-progress-stats">
+          <span v-if="store.progress.total > 0">{{ formatCount(store.progress.processed) }} / {{ formatCount(store.progress.total) }} 个文件</span>
+          <span v-else>正在发现文件...</span>
+          <span class="scan-time">已用 {{ store.progress.elapsed }}</span>
+          <span v-if="store.progress.total > 0 && store.progress.estimated" class="scan-eta">预计剩余 {{ store.progress.estimated }}</span>
+        </div>
       </div>
     </div>
 
@@ -51,7 +92,7 @@
             <td class="col-check" :style="{ borderLeftColor: fileColor(file) }" @click.stop><input type="checkbox" :checked="store.selectedPaths.has(file.path)" @change="store.toggleSelect(file.path)" /></td>
             <td class="col-path"><span class="path-text" :title="relPath(file.path)">{{ relPath(file.path) }}</span></td>
             <td class="col-size">{{ formatSize(file.size) }}</td>
-            <td class="col-type"><span class="type-tag" :style="{ background: fileColor(file), color:'#fff' }">{{ file.is_dir ? '文件夹' : file.extension.toUpperCase() || '-' }}</span></td>
+            <td class="col-type"><span class="type-tag" :style="{ background: fileColor(file), color:'#fff' }">{{ file.is_dir ? '文件夹' : (file.extension.toUpperCase().slice(0, 4) || '-') }}</span></td>
             <td class="col-date" :title="file.modified">{{ file.modified }}</td>
             <td class="col-action">
               <button v-if="isPreviewable(file)" class="row-btn" @click.stop="openPreview(file)" title="预览">
@@ -92,12 +133,6 @@
       @cancel="resolveDlg(false)"
     />
 
-    <!-- 加载中 — 进度条严格在底部 statusbar 内 -->
-    <div v-if="store.loading" class="loading-overlay">
-      <div class="loading-spinner" />
-      <span class="loading-text">{{ loadingText }}</span>
-    </div>
-
     <!-- 底部状态栏 -->
     <div class="statusbar">
       <div class="status-left">
@@ -105,30 +140,10 @@
         <button v-if="store.currentPath" class="clear-btn" @click="clearList" title="清空列表">✕</button>
       </div>
 
-      <!-- 进度状态 — 在状态栏右侧，stats 旁边 -->
-      <Transition name="progress-fade">
-        <div v-if="store.progress.active" class="status-progress" :class="{ 'fade-out': store.progress.fadeOut }">
-          <span class="progress-label">{{ progressLabel }}</span>
-          <div class="progress-bar-wrap">
-            <!-- Indeterminate: infinite animation when total is 0 -->
-            <div v-if="store.progress.total === 0" class="progress-bar-track progress-bar-indeterminate">
-              <div class="progress-bar-fill-indeterminate" />
-            </div>
-            <!-- Determinate: precise progress bar -->
-            <div v-else class="progress-bar-track">
-              <div class="progress-bar-fill" :style="{ width: progressPercent + '%' }" />
-            </div>
-          </div>
-          <span class="progress-time">已用 {{ store.progress.elapsed }}</span>
-          <span v-if="store.progress.total > 0" class="progress-remaining">剩余 {{ formatRemaining(store.progress.total - store.progress.processed) }}</span>
-          <span v-if="store.progress.estimated" class="progress-eta">预计 {{ store.progress.estimated }}</span>
-        </div>
-      </Transition>
-
       <div class="status-stats">
-        <span class="stat">选中 <strong>{{ store.selectedCount }}</strong></span>
-        <span class="stat">筛选 <strong>{{ store.previewMode ? store.matchedCount : store.totalCount }}</strong></span>
-        <span class="stat">总数 <strong>{{ store.totalCount }}</strong></span>
+        <span class="stat">选中 <strong>{{ formatCount(store.selectedCount) }}</strong></span>
+        <span class="stat">筛选 <strong>{{ formatCount(store.previewMode ? store.matchedCount : store.totalCount) }}</strong></span>
+        <span class="stat">总数 <strong>{{ formatCount(store.totalCount) }}</strong></span>
       </div>
     </div>
   </div>
@@ -206,7 +221,17 @@ function formatSize(bytes: number): string {
 }
 
 function formatRemaining(count: number): string {
-  return count.toLocaleString()
+  return formatCount(count)
+}
+
+function formatCount(n: number): string {
+  if (n < 10000) return n.toLocaleString()
+  if (n < 100_000_000) {
+    const v = n / 10000
+    return (v < 10 ? v.toFixed(1) : v.toFixed(0)) + '万'
+  }
+  const v = n / 100_000_000
+  return (v < 10 ? v.toFixed(1) : v.toFixed(0)) + '亿'
 }
 
 function fileColor(file: any): string {
@@ -256,23 +281,13 @@ const progressPercent = computed(() => {
   return Math.min(100, Math.round((p.processed / p.total) * 100))
 })
 
-const loadingText = computed(() => {
-  if (!store.progress.active) return '加载中...'
-  switch (store.progress.operation) {
-    case 'scan': return '扫描中...'
-    case 'delete': return '删除中...'
-    case 'dissolve': return '解散文件夹...'
-    case 'dedupe': return '查找重复文件...'
-    default: return '处理中...'
-  }
-})
-
 const progressLabel = computed(() => {
   switch (store.progress.operation) {
     case 'scan': return '扫描中...'
     case 'delete': return '删除中...'
     case 'dissolve': return '解散中...'
     case 'dedupe': return '去重中...'
+    case 'rotate': return '旋转中...'
     default: return '处理中...'
   }
 })
@@ -280,64 +295,54 @@ const progressLabel = computed(() => {
 async function applyPreview() {
   // Tool mode: dissolve folder
   if (store.dissolveMode) {
-    store.loading = true
-    try {
-      const preview = await store.dissolvePreview()
-      store.loading = false
-      if (preview.length === 0) {
-        await showDialog({ title: '解散文件夹', message: '没有需要解散的文件。', showCancel: false })
-        return
-      }
-      const moves = preview.filter(r => r.action === 'move')
-      const skips = preview.filter(r => r.action === 'skip')
-      if (moves.length === 0) {
-        await showDialog({ title: '解散文件夹', message: '没有需要移动的文件（均为重复文件）。', showCancel: false })
-        return
-      }
-      const items = [
-        ...moves.map(r => `${r.name}  →  ${r.target}`),
-        ...skips.map(r => `${r.name}  ⤏ 跳过（重复文件）`),
-      ]
-      const ok = await showDialog({
-        title: `解散文件夹 · ${moves.length} 个移动` + (skips.length > 0 ? ` · ${skips.length} 个跳过` : ''),
-        message: '以下文件将被移动：',
-        list: items,
-        kind: 'warning',
-        confirmText: '执行解散',
-        wide: true,
+    const preview = await store.dissolvePreview()
+    if (preview.length === 0) {
+      await showDialog({ title: '解散文件夹', message: '没有需要解散的文件。', showCancel: false })
+      return
+    }
+    const moves = preview.filter(r => r.action === 'move')
+    const skips = preview.filter(r => r.action === 'skip')
+    if (moves.length === 0) {
+      await showDialog({ title: '解散文件夹', message: '没有需要移动的文件（均为重复文件）。', showCancel: false })
+      return
+    }
+    const items = [
+      ...moves.map(r => `${r.name}  →  ${r.target}`),
+      ...skips.map(r => `${r.name}  ⤏ 跳过（重复文件）`),
+    ]
+    const ok = await showDialog({
+      title: `解散文件夹 · ${moves.length} 个移动` + (skips.length > 0 ? ` · ${skips.length} 个跳过` : ''),
+      message: '以下文件将被移动：',
+      list: items,
+      kind: 'warning',
+      confirmText: '执行解散',
+      wide: true,
+    })
+    if (ok) {
+      const results = await store.dissolveExecute()
+      const moved = results.filter(r => r.action === 'move').length
+      await showDialog({
+        title: '解散完成',
+        message: `成功移动 ${moved} 个文件`,
+        showCancel: false,
       })
-      if (ok) {
-        store.loading = true
-        const results = await store.dissolveExecute()
-        store.loading = false
-        const moved = results.filter(r => r.action === 'move').length
-        await showDialog({
-          title: '解散完成',
-          message: `成功移动 ${moved} 个文件`,
-          showCancel: false,
-        })
-      }
-    } catch (e: any) { store.loading = false; console.error(e) }
+    }
     return
   }
 
   // Tool mode: delete empty folders
   if (store.deleteEmpty) {
-    store.loading = true
-    try {
-      const result = await store.deleteEmptyDirs()
-      store.loading = false
-      const total = result.deleted.length + result.failed.length
-      if (total === 0) {
-        await showDialog({ title: '删除空文件夹', message: '没有找到空文件夹', showCancel: false })
-      } else {
-        await showDialog({
-          title: '删除空文件夹',
-          message: `已删除 ${result.deleted.length} 个空文件夹` + (result.failed.length > 0 ? `\n${result.failed.length} 个删除失败` : ''),
-          showCancel: false,
-        })
-      }
-    } catch (e: any) { store.loading = false; console.error(e) }
+    const result = await store.deleteEmptyDirs()
+    const total = result.deleted.length + result.failed.length
+    if (total === 0) {
+      await showDialog({ title: '删除空文件夹', message: '没有找到空文件夹', showCancel: false })
+    } else {
+      await showDialog({
+        title: '删除空文件夹',
+        message: `已删除 ${result.deleted.length} 个空文件夹` + (result.failed.length > 0 ? `\n${result.failed.length} 个删除失败` : ''),
+        showCancel: false,
+      })
+    }
     return
   }
 
@@ -347,92 +352,78 @@ async function applyPreview() {
       await showDialog({ title: '旋转图片', message: '请先在列表中选中要旋转的图片', showCancel: false })
       return
     }
-    store.loading = true
-    try {
-      const preview = await store.previewRotate()
-      store.loading = false
-      if (preview.length === 0) {
-        await showDialog({ title: '旋转图片', message: '选中的文件均不支持旋转（仅支持 JPEG / MP4 / MOV 格式）', showCancel: false })
-        return
+    const preview = await store.previewRotate()
+    if (preview.length === 0) {
+      await showDialog({ title: '旋转图片', message: '选中的文件均不支持旋转（仅支持 JPEG / MP4 / MOV 格式）', showCancel: false })
+      return
+    }
+    const dir = store.rotateDir === 'cw' ? '顺时针' : '逆时针'
+    const angle = store.rotateAngle
+    const deg = store.rotateDir === 'cw' ? angle : -angle
+    const isVideo = (p: string) => /\.(mp4|mov)$/i.test(p)
+    const imageItems = await Promise.all(preview.map(async r => {
+      let url = ''
+      if (!isVideo(r.path)) {
+        try {
+          const { convertFileSrc } = await import('@tauri-apps/api/core')
+          url = convertFileSrc(r.path)
+        } catch {}
       }
-      const dir = store.rotateDir === 'cw' ? '顺时针' : '逆时针'
-      const angle = store.rotateAngle
-      const deg = store.rotateDir === 'cw' ? angle : -angle
-      const isVideo = (p: string) => /\.(mp4|mov)$/i.test(p)
-      const imageItems = await Promise.all(preview.map(async r => {
-        let url = ''
-        if (!isVideo(r.path)) {
-          try {
-            const { convertFileSrc } = await import('@tauri-apps/api/core')
-            url = convertFileSrc(r.path)
-          } catch {}
-        }
-        return { url, name: relPath(r.path), transform: `rotate(${deg}deg)`, isVideo: isVideo(r.path) }
-      }))
-      const ok = await showDialog({
-        title: `旋转预览 · ${dir}${angle}°`,
-        message: `左侧为旋转前，右侧为旋转后预览：`,
-        images: imageItems,
-        kind: 'warning',
-        confirmText: '确认旋转',
-        cancelText: '取消',
-        wide: true,
-      })
-      if (ok) {
-        store.loading = true
-        await store.rotateSelectedFiles()
-        store.loading = false
-        await showDialog({ title: '旋转完成', message: `已处理 ${preview.length} 张图片`, showCancel: false })
-      }
-    } catch (e: any) { store.loading = false; console.error(e) }
+      return { url, name: relPath(r.path), transform: `rotate(${deg}deg)`, isVideo: isVideo(r.path) }
+    }))
+    const ok = await showDialog({
+      title: `旋转预览 · ${dir}${angle}°`,
+      message: `左侧为旋转前，右侧为旋转后预览：`,
+      images: imageItems,
+      kind: 'warning',
+      confirmText: '确认旋转',
+      cancelText: '取消',
+      wide: true,
+    })
+    if (ok) {
+      await store.rotateSelectedFiles()
+      await showDialog({ title: '旋转完成', message: `已处理 ${preview.length} 张图片`, showCancel: false })
+    }
     return
   }
 
   // Tool mode: find duplicate files
   if (store.dedupeMode) {
-    store.loading = true
-    try {
-      const groups = await store.findDuplicates()
-      store.loading = false
-      if (groups.length === 0) {
-        await showDialog({ title: '查找重复文件', message: '没有发现重复文件', showCancel: false })
-        return
-      }
-      const totalFiles = groups.reduce((s, g) => s + g.files.length, 0)
-      const items = groups.map((g, i) => {
-        const sz = formatSize(g.size)
-        return `[${sz}] ${g.files.map(f => relPath(f.path)).join('  =  ')}`
+    const groups = await store.findDuplicates()
+    if (groups.length === 0) {
+      await showDialog({ title: '查找重复文件', message: '没有发现重复文件', showCancel: false })
+      return
+    }
+    const totalFiles = groups.reduce((s, g) => s + g.files.length, 0)
+    const items = groups.map((g, i) => {
+      const sz = formatSize(g.size)
+      return `[${sz}] ${g.files.map(f => relPath(f.path)).join('  =  ')}`
+    })
+    const ok = await showDialog({
+      title: `重复文件 · ${groups.length} 组 · ${totalFiles} 个文件`,
+      message: '每组选择保留最新或最旧的文件：',
+      list: items,
+      kind: 'warning',
+      confirmText: '保留最新的',
+      cancelText: '保留最旧的',
+      wide: true,
+    })
+    const keepNewest = ok
+    const toDelete: string[] = []
+    for (const g of groups) {
+      const sorted = [...g.files].sort((a, b) => {
+        const d = a.modified.localeCompare(b.modified)
+        if (d !== 0) return keepNewest ? -d : d
+        return a.path.length - b.path.length
       })
-      const ok = await showDialog({
-        title: `重复文件 · ${groups.length} 组 · ${totalFiles} 个文件`,
-        message: '每组选择保留最新或最旧的文件：',
-        list: items,
-        kind: 'warning',
-        confirmText: '保留最新的',
-        cancelText: '保留最旧的',
-        wide: true,
-      })
-      // ok=true → keep newest, ok=false → keep oldest
-      store.loading = true
-      const keepNewest = ok
-      const toDelete: string[] = []
-      for (const g of groups) {
-        const sorted = [...g.files].sort((a, b) => {
-          const d = a.modified.localeCompare(b.modified)
-          if (d !== 0) return keepNewest ? -d : d
-          return a.path.length - b.path.length
-        })
-        const kept = sorted[0]
-        toDelete.push(...sorted.slice(1).map(f => f.path))
-      }
-      const deleted = await store.deleteDuplicates(toDelete)
-      store.loading = false
-      await showDialog({
-        title: '去重完成',
-        message: `删除了 ${deleted} 个重复文件，保留了 ${groups.length} 个文件`,
-        showCancel: false,
-      })
-    } catch (e: any) { store.loading = false; console.error(e) }
+      toDelete.push(...sorted.slice(1).map(f => f.path))
+    }
+    const deleted = await store.deleteDuplicates(toDelete)
+    await showDialog({
+      title: '去重完成',
+      message: `删除了 ${deleted} 个重复文件，保留了 ${groups.length} 个文件`,
+      showCancel: false,
+    })
     return
   }
 
@@ -488,7 +479,7 @@ async function handleDelete() {
 </script>
 
 <style scoped>
-.main-view { display:flex; flex-direction:column; height:100%; overflow:hidden; }
+.main-view { display:flex; flex-direction:column; height:100%; overflow:hidden; position:relative; }
 
 .toolbar { display:flex; align-items:center; padding:0 8px 0 14px; border-bottom:1px solid var(--border-color); background:var(--bg-secondary); height:40px; user-select:none; }
 .app-logo { width: 24px; height: 24px; border-radius: 5px; margin-right: 4px; flex-shrink: 0; }
@@ -502,6 +493,27 @@ async function handleDelete() {
 .tb-btn--danger:hover:not(:disabled) { background:#fff1f0; color:var(--danger-color); }
 .tb-btn:disabled { opacity:.3; cursor:not-allowed; }
 .tb-btn em { position:absolute; top:-2px; right:-2px; font-style:normal; font-size:10px; background:var(--danger-color); color:#fff; border-radius:8px; padding:0 5px; line-height:15px; min-width:16px; text-align:center; }
+
+/* Progress in toolbar */
+.tb-progress {
+  display:flex; align-items:center; gap:8px; margin-left:auto; flex-shrink:0;
+  padding:0 12px; height:100%; border-left:1px solid var(--border-color);
+}
+.tb-progress-label { font-size:12px; font-weight:600; color:var(--accent-color); white-space:nowrap; }
+.tb-progress-bar { width:130px; flex-shrink:0; }
+.tb-progress-bar .progress-bar-track { height:5px; background:#e8e8e8; border-radius:3px; overflow:hidden; }
+.tb-progress-bar .progress-bar-fill { height:100%; background:var(--accent-color); border-radius:3px; transition:width .25s ease; }
+.tb-progress-bar .progress-bar-indeterminate { position:relative; overflow:hidden; }
+.tb-progress-bar .progress-bar-fill-indeterminate {
+  position:absolute; top:0; left:0; width:40%; height:100%;
+  background:var(--accent-color); border-radius:3px;
+  animation:indeterminate 1.5s ease-in-out infinite;
+}
+.tb-progress-time { font-size:11px; color:var(--text-muted); white-space:nowrap; }
+.tb-progress-eta { font-size:11px; color:var(--accent-color); white-space:nowrap; font-weight:500; }
+.tb-progress-fade-enter-active { transition:opacity .2s ease; }
+.tb-progress-fade-leave-active { transition:opacity .3s ease; }
+.tb-progress-fade-enter-from, .tb-progress-fade-leave-to { opacity:0; }
 
 .table-scroll { flex:1; overflow-y:auto; }
 .table-scroll.table-empty { display:flex; align-items:center; justify-content:center; overflow:hidden; }
@@ -517,6 +529,7 @@ async function handleDelete() {
 .file-table th:first-child { box-shadow:-2.1vw 0 0 #eef2fb; }
 .file-table th:last-child { box-shadow:2.1vw 0 0 #eef2fb; }
 .file-table td { padding:6px 10px; background:#fff; border-top:1px solid #eef0f5; border-bottom:1px solid #eef0f5; box-sizing:border-box; }
+.file-table tbody tr { content-visibility:auto; contain-intrinsic-size:0 32px; }
 .file-table td:first-child { border-left:1px solid #eef0f5; border-radius:4px 0 0 4px; }
 .file-table td:last-child { border-right:1px solid #eef0f5; border-radius:0 4px 4px 0; background:#fff; }
 .file-table td.col-check { border-left:3px solid #d9d9d9; }
@@ -539,11 +552,11 @@ async function handleDelete() {
 .col-path { width:46%; }
 .col-path .path-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block; }
 .col-size { width:10%; font-size:12px; }
-.col-type { width:7%; font-size:12px; }
+.col-type { width:7%; font-size:11px; }
 .col-date { width:20%; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .col-action { width:12%; text-align:center; }
 
-.type-tag { font-size:11px; padding:2px 6px; border-radius:3px; font-weight:500; }
+.type-tag { font-size:10px; padding:1px 5px; border-radius:3px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
 .row-btn { border:none; background:transparent; cursor:pointer; padding:2px 4px; border-radius:3px; display:inline-flex; }
 .row-btn:hover { background:#f0f0f0; }
 
@@ -553,18 +566,21 @@ async function handleDelete() {
 .preview-img { max-width:90vw; max-height:90vh; border-radius:6px; }
 .preview-video { max-width:90vw; max-height:90vh; border-radius:6px; }
 
-/* Loading overlay */
-.loading-overlay {
-  position:absolute; inset:0; display:flex; flex-direction:column; align-items:center;
-  justify-content:center; gap:12px; background:rgba(255,255,255,.92); z-index:10;
-  font-size:14px; color:var(--text-muted);
+/* Scan progress zone */
+.scan-progress-zone {
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px;
+  padding:48px 72px; max-width:420px; background:#fff; border-radius:12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
-.loading-spinner {
-  width:28px; height:28px; border:2.5px solid var(--border-color);
-  border-top-color:var(--accent-color); border-radius:50%; animation:spin .8s linear infinite;
-}
-.loading-text { font-size:14px; font-weight:500; }
-@keyframes spin { to { transform:rotate(360deg); } }
+.scan-progress-icon { animation: pulse-icon 1.8s ease-in-out infinite; }
+@keyframes pulse-icon { 0%,100% { opacity:0.4; transform:scale(1); } 50% { opacity:1; transform:scale(1.05); } }
+.scan-progress-title { font-size:16px; font-weight:600; color:var(--text-primary); margin:0; }
+.scan-progress-path { font-size:12px; color:var(--text-muted); margin:0; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.scan-progress-bar { width:100%; flex-shrink:0; }
+.scan-progress-bar .progress-bar-track { height:6px; border-radius:3px; }
+.scan-progress-stats { display:flex; flex-wrap:wrap; gap:12px; font-size:12px; color:var(--text-muted); justify-content:center; }
+.scan-time { color:var(--text-muted); }
+.scan-eta { color:var(--accent-color); font-weight:500; }
 
 /* Status bar */
 .statusbar {
@@ -572,51 +588,11 @@ async function handleDelete() {
   padding:6px 14px; border-top:1px solid var(--border-color);
   background:var(--bg-secondary); font-size:13px; min-height:32px;
 }
-.status-left { display:flex; align-items:center; gap:8px; max-width:40%; }
+.status-left { display:flex; align-items:center; gap:8px; max-width:50%; }
 .status-path { color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .clear-btn { border:none; background:transparent; color:var(--text-muted); cursor:pointer; font-size:14px; padding:0 4px; flex-shrink:0; }
 .clear-btn:hover { color:var(--danger-color); }
 .status-stats { display:flex; align-items:center; gap:16px; flex-shrink:0; }
 .stat { color:var(--text-muted); }
 .stat strong { color:var(--accent-color); }
-
-/* Progress in status bar */
-.status-progress {
-  display:flex; align-items:center; gap:8px; flex-shrink:0;
-  padding:0 12px; border-left:1px solid var(--border-color);
-  transition: opacity 0.3s ease;
-}
-.status-progress.fade-out { opacity: 0; }
-.progress-label { font-size:12px; font-weight:500; color:var(--accent-color); white-space:nowrap; }
-.progress-bar-wrap { width:120px; flex-shrink:0; }
-.progress-bar-track {
-  height:4px; background:#e8e8e8; border-radius:2px; overflow:hidden;
-}
-.progress-bar-fill {
-  height:100%; background:var(--accent-color); border-radius:2px;
-  transition: width 0.3s ease;
-}
-
-/* Indeterminate progress bar animation */
-.progress-bar-indeterminate {
-  position:relative; overflow:hidden;
-}
-.progress-bar-fill-indeterminate {
-  position:absolute; top:0; left:0; width:40%; height:100%;
-  background:var(--accent-color); border-radius:2px;
-  animation: indeterminate 1.5s ease-in-out infinite;
-}
-@keyframes indeterminate {
-  0% { left: -40%; }
-  100% { left: 100%; }
-}
-
-.progress-time { font-size:11px; color:var(--text-muted); white-space:nowrap; }
-.progress-remaining { font-size:11px; color:var(--text-muted); white-space:nowrap; }
-.progress-eta { font-size:11px; color:var(--accent-color); white-space:nowrap; font-weight:500; }
-
-/* Fade transition */
-.progress-fade-enter-active { transition: opacity 0.2s ease; }
-.progress-fade-leave-active { transition: opacity 0.3s ease; }
-.progress-fade-enter-from, .progress-fade-leave-to { opacity: 0; }
 </style>

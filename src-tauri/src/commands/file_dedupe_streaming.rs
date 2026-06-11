@@ -190,7 +190,7 @@ pub async fn delete_duplicates_streaming(
             .collect();
 
         let mut deleted_count = 0usize;
-        for (i, (path_str, ok)) in results.iter().enumerate() {
+        for (i, (_path_str, ok)) in results.iter().enumerate() {
             if *ok {
                 deleted_count += 1;
             }

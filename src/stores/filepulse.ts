@@ -17,7 +17,6 @@ export const useFilePulseStore = defineStore('filepulse', () => {
   const selectedPaths = ref<Set<string>>(new Set())
   const currentPath = ref('')
   const recursive = ref(true)
-  const loading = ref(false)
   const previewMode = ref(false)
 
   // Streaming progress state
@@ -40,8 +39,8 @@ export const useFilePulseStore = defineStore('filepulse', () => {
   const filters = ref<FilterCondition[]>([
     { filter_type: 'name', enabled: false, operator: 'contains', value: '', negate: false },
     { filter_type: 'extension', enabled: false, value: '', negate: false },
-    { filter_type: 'size', enabled: false, operator: '>', value: '', unit: 'MB', negate: false },
-    { filter_type: 'date', enabled: false, operator: 'recent', value: '', unit: 'day', negate: false },
+    { filter_type: 'size', enabled: false, operator: '>', value: '10', unit: 'MB', negate: false },
+    { filter_type: 'date', enabled: false, operator: 'recent', value: '7', unit: 'day', negate: false },
   ])
 
   // Dissolve
@@ -65,10 +64,10 @@ export const useFilePulseStore = defineStore('filepulse', () => {
   const sortAsc = ref(true)
 
   // ─── Computed ────────────────────────────────────
-  const filteredFiles = computed(() => {
-    let result = files.value.filter(f => !f.is_dir)
-    if (previewMode.value) result = result.filter(file => matchesFilters(file))
-    result = [...result].sort((a, b) => {
+  // Quick sort-only list (no filter overhead when previewMode is off)
+  const sortedOnly = computed(() => {
+    const result = files.value.filter(f => !f.is_dir)
+    return [...result].sort((a, b) => {
       let cmp = 0
       switch (sortKey.value) {
         case 'name': cmp = a.name.localeCompare(b.name); break
@@ -78,7 +77,11 @@ export const useFilePulseStore = defineStore('filepulse', () => {
       }
       return sortAsc.value ? cmp : -cmp
     })
-    return result
+  })
+
+  const filteredFiles = computed(() => {
+    if (!previewMode.value) return sortedOnly.value
+    return sortedOnly.value.filter(file => matchesFilters(file))
   })
 
   const selectedCount = computed(() => selectedPaths.value.size)
@@ -90,6 +93,7 @@ export const useFilePulseStore = defineStore('filepulse', () => {
 
   // ─── Progress helpers ────────────────────────────
   let progressTimer: ReturnType<typeof setInterval> | null = null
+  let minDisplayTimer: ReturnType<typeof setTimeout> | null = null
 
   function formatTime(ms: number): string {
     const totalSec = Math.floor(ms / 1000)
@@ -99,6 +103,7 @@ export const useFilePulseStore = defineStore('filepulse', () => {
   }
 
   function startProgress(operation: string, total: number = 0) {
+    if (minDisplayTimer) { clearTimeout(minDisplayTimer); minDisplayTimer = null }
     progress.value = {
       active: true,
       operation,
@@ -110,14 +115,12 @@ export const useFilePulseStore = defineStore('filepulse', () => {
       done: false,
       fadeOut: false,
     }
-    // Update elapsed time every second
     if (progressTimer) clearInterval(progressTimer)
     progressTimer = setInterval(() => {
       if (!progress.value.active) return
       const elapsedMs = Date.now() - progress.value.startTime
       progress.value.elapsed = formatTime(elapsedMs)
 
-      // Estimate remaining time
       if (progress.value.total > 0 && progress.value.processed > 0) {
         const rate = progress.value.processed / elapsedMs
         const remaining = (progress.value.total - progress.value.processed) / rate
@@ -137,21 +140,24 @@ export const useFilePulseStore = defineStore('filepulse', () => {
       progressTimer = null
     }
     progress.value.done = true
-    // Fade out after 500ms
-    setTimeout(() => {
+    // Ensure minimum display time: keep visible for at least 800ms from operation start
+    const elapsed = Date.now() - progress.value.startTime
+    const remaining = Math.max(0, 800 - elapsed)
+    if (minDisplayTimer) clearTimeout(minDisplayTimer)
+    minDisplayTimer = setTimeout(() => {
       progress.value.fadeOut = true
       setTimeout(() => {
         progress.value.active = false
         progress.value.fadeOut = false
       }, 300)
-    }, 500)
+    }, remaining)
   }
 
   // ─── Streaming: Scan ─────────────────────────────
   async function scanFiles(path: string) {
-    loading.value = true
     currentPath.value = path
     scanBatchItems = []
+    files.value = [] // clear old files immediately so UI shows scan progress
     startProgress('scan')
 
     try {
@@ -196,8 +202,6 @@ export const useFilePulseStore = defineStore('filepulse', () => {
       console.error('Scan failed:', e)
       files.value = []
       finishProgress()
-    } finally {
-      loading.value = false
     }
   }
 
@@ -301,12 +305,16 @@ export const useFilePulseStore = defineStore('filepulse', () => {
   // ─── Streaming: Dissolve ─────────────────────────
   async function dissolvePreview(): Promise<DissolveResult[]> {
     if (!currentPath.value) return []
+    startProgress('dissolve')
     try {
-      return await invoke<DissolveResult[]>('dissolve_folder', {
+      const results = await invoke<DissolveResult[]>('dissolve_folder', {
         path: currentPath.value, keepLevels: keepLevels.value, dryRun: true,
       })
+      finishProgress()
+      return results
     } catch (e) {
       console.error('Dissolve preview failed:', e)
+      finishProgress()
       return []
     }
   }
@@ -462,10 +470,10 @@ export const useFilePulseStore = defineStore('filepulse', () => {
         filters.value.push({ ...base, value: '' })
         break
       case 'size':
-        filters.value.push({ ...base, operator: '>', value: '', unit: 'MB' })
+        filters.value.push({ ...base, operator: '>', value: '10', unit: 'MB' })
         break
       case 'date':
-        filters.value.push({ ...base, operator: 'recent', value: '', unit: 'day' })
+        filters.value.push({ ...base, operator: 'recent', value: '7', unit: 'day' })
         break
       case 'empty_dir':
         filters.value.push({ ...base })
@@ -486,8 +494,8 @@ export const useFilePulseStore = defineStore('filepulse', () => {
     filters.value = [
       { filter_type: 'name', enabled: false, operator: 'contains', value: '', negate: false },
       { filter_type: 'extension', enabled: false, value: '', negate: false },
-      { filter_type: 'size', enabled: false, operator: '>', value: '', unit: 'MB', negate: false },
-      { filter_type: 'date', enabled: false, operator: 'recent', value: '', unit: 'day', negate: false },
+      { filter_type: 'size', enabled: false, operator: '>', value: '10', unit: 'MB', negate: false },
+      { filter_type: 'date', enabled: false, operator: 'recent', value: '7', unit: 'day', negate: false },
     ]
     previewMode.value = false
   }
@@ -594,24 +602,32 @@ export const useFilePulseStore = defineStore('filepulse', () => {
   async function previewRotate(): Promise<{ path: string; before: string; after: string }[]> {
     const paths = Array.from(selectedPaths.value).filter(p => /\.(jpe?g|mp4|mov)$/i.test(p))
     if (paths.length === 0) return []
+    startProgress('rotate', paths.length)
     const results: { path: string; before: string; after: string }[] = []
-    for (const path of paths) {
+    for (let i = 0; i < paths.length; i++) {
+      const path = paths[i]
       try {
         const r = await invoke<RotatePreview>('preview_rotate', { path, angle: rotateAngle.value, direction: rotateDir.value })
         results.push({ path, before: orientationName(r.original_orientation), after: orientationName(r.new_orientation) })
       } catch (e) { console.error('Rotate preview failed:', path, e) }
+      updateProgress(i + 1, paths.length)
     }
+    finishProgress()
     return results
   }
 
   async function rotateSelectedFiles() {
     const paths = Array.from(selectedPaths.value).filter(p => /\.(jpe?g|mp4|mov)$/i.test(p))
     if (paths.length === 0) return
-    for (const path of paths) {
+    startProgress('rotate', paths.length)
+    for (let i = 0; i < paths.length; i++) {
+      const path = paths[i]
       try {
         await invoke('rotate_file', { path, angle: rotateAngle.value, direction: rotateDir.value })
       } catch (e) { console.error('Rotate failed:', path, e) }
+      updateProgress(i + 1, paths.length)
     }
+    finishProgress()
   }
 
   function orientationName(v: number): string {
@@ -620,22 +636,38 @@ export const useFilePulseStore = defineStore('filepulse', () => {
   }
 
   // ─── Rules ───────────────────────────────────────
+  let saveRuleLock = false
+
   async function loadRules() {
     try { rules.value = await invoke<FilterRule[]>('load_rules') }
     catch (e) { console.error('Load rules failed:', e) }
   }
 
   async function saveRule(name: string) {
-    const rule: FilterRule = {
-      id: Date.now().toString(),
-      name,
-      filters: JSON.parse(JSON.stringify(filters.value)),
-      created_at: new Date().toISOString(),
+    if (saveRuleLock) { console.warn('saveRule already in progress, skipping'); return }
+    saveRuleLock = true
+    try {
+      // Deep clone and coerce all values to strings to match Rust's Option<String>
+      const cloned = filters.value.map(f => ({
+        ...f,
+        value: f.value != null ? String(f.value) : undefined,
+        operator: f.operator ?? undefined,
+        unit: f.unit ?? undefined,
+      }))
+      const rule: FilterRule = {
+        id: `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        name,
+        filters: cloned,
+        created_at: new Date().toISOString(),
+      }
+      console.log('Saving rule:', JSON.stringify(rule))
+      const prev = [...rules.value]
+      rules.value = [...rules.value, rule]
+      try { await invoke('save_rules', { rules: rules.value }) }
+      catch (e) { console.error('Save rule failed:', e); rules.value = prev; throw e }
+    } finally {
+      saveRuleLock = false
     }
-    const prev = [...rules.value]
-    rules.value.push(rule)
-    try { await invoke('save_rules', { rules: rules.value }) }
-    catch (e) { console.error('Save rule failed:', e); rules.value = prev }
   }
 
   async function deleteRule(id: string) {
@@ -655,7 +687,7 @@ export const useFilePulseStore = defineStore('filepulse', () => {
   }
 
   return {
-    files, selectedPaths, currentPath, recursive, loading, previewMode,
+    files, selectedPaths, currentPath, recursive, previewMode,
     filters, dissolveMode, keepLevels, deleteEmpty, rotateMode, rotateAngle, rotateDir, dedupeMode,
     rules, sortKey, sortAsc, progress,
     filteredFiles, selectedCount, totalCount, matchedCount,

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use crate::config::is_system_path;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeleteResult {
     pub deleted: Vec<String>,
     pub failed: Vec<String>,

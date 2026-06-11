@@ -180,7 +180,7 @@ fn collect_empty_dirs_for_streaming(root: &Path, current: &Path) -> Vec<PathBuf>
             .map(|mut d| d.next().is_none())
             .unwrap_or(false);
         if is_empty {
-            result.push(current.clone());
+            result.push(current.to_path_buf());
         }
     }
 

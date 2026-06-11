@@ -36,12 +36,12 @@
           </template>
           <template v-if="f.filter_type === 'size'">
             <select v-model="f.operator" class="sel" :disabled="toolActive"><option value="&gt;">&gt;</option><option value="&lt;">&lt;</option><option value="=">=</option></select>
-            <input v-model.number="f.value" class="inp-s" type="number" placeholder="10" :disabled="toolActive" />
+            <input v-model="f.value" class="inp-s" type="number" min="1" placeholder="10" :disabled="toolActive" />
             <select v-model="f.unit" class="sel" :disabled="toolActive"><option value="KB">KB</option><option value="MB">MB</option><option value="GB">GB</option></select>
           </template>
           <template v-if="f.filter_type === 'date'">
             <select v-model="f.operator" class="sel" :disabled="toolActive"><option value="recent">最近</option><option value="before">早于</option></select>
-            <input v-model.number="f.value" class="inp-xs" type="number" placeholder="7" :disabled="toolActive" />
+            <input v-model="f.value" class="inp-xs" type="number" min="1" placeholder="7" :disabled="toolActive" />
             <select v-model="f.unit" class="sel" :disabled="toolActive"><option value="day">天</option><option value="hour">时</option><option value="month">月</option></select>
           </template>
           <label class="negate"><input type="checkbox" v-model="f.negate" :disabled="toolActive" /> 取反</label>
@@ -56,7 +56,7 @@
       <div class="side-title" style="margin-bottom:0">
         规则管理
         <input v-model="ruleName" class="inp rule-inp" placeholder="命名并保存..." :disabled="toolActive" @keyup.enter="handleSave" />
-        <button class="icon-btn save-icon" :disabled="!ruleName.trim() || store.filters.length === 0 || toolActive" @click="handleSave" title="保存当前筛选">
+        <button class="icon-btn save-icon" :disabled="saving || !ruleName.trim() || store.filters.length === 0 || toolActive" @click="handleSave" title="保存当前筛选">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
         </button>
         <button class="icon-btn" :class="{ active: ruleEdit }" :disabled="toolActive" @click="ruleEdit = !ruleEdit" title="编辑模式">
@@ -115,6 +115,7 @@ const ruleName = ref('')
 const hoverIdx = ref(-1)
 const filterEdit = ref(false)
 const ruleEdit = ref(false)
+const saving = ref(false)
 
 const toolActive = computed(() => store.deleteEmpty || store.dissolveMode || store.rotateMode || store.dedupeMode)
 
@@ -158,9 +159,18 @@ function ruleSummary(rule:FilterRule):string {
 }
 
 async function handleSave() {
+  if (saving.value) return
   const n=ruleName.value.trim()
   if(!n||store.filters.length===0) return
-  await store.saveRule(n); ruleName.value=''
+  saving.value = true
+  try {
+    await store.saveRule(n)
+    ruleName.value = ''
+  } catch(e) {
+    console.error('保存规则失败:', e)
+  } finally {
+    saving.value = false
+  }
 }
 
 onMounted(()=>store.loadRules())
