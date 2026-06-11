@@ -1,6 +1,10 @@
 pub mod commands;
+pub mod config;
 
-use commands::{file_dedupe, file_delete, file_dissolve, file_reveal, file_rotate, file_scan, rule_store};
+use commands::{
+    file_dedupe, file_dedupe_streaming, file_delete, file_delete_streaming, file_dissolve,
+    file_dissolve_streaming, file_reveal, file_rotate, file_scan, file_scan_streaming, rule_store,
+};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -12,6 +16,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_os::init())
         .invoke_handler(tauri::generate_handler![
+            // Original commands (kept for backward compatibility)
             file_scan::scan_files,
             file_dedupe::find_duplicates,
             file_dedupe::delete_duplicates,
@@ -23,6 +28,13 @@ pub fn run() {
             file_rotate::preview_rotate,
             rule_store::load_rules,
             rule_store::save_rules,
+            // Streaming commands (Channel API)
+            file_scan_streaming::scan_files_streaming,
+            file_delete_streaming::delete_files_streaming,
+            file_delete_streaming::delete_empty_dirs_streaming,
+            file_dissolve_streaming::dissolve_folder_streaming,
+            file_dedupe_streaming::find_duplicates_streaming,
+            file_dedupe_streaming::delete_duplicates_streaming,
         ])
         .run(tauri::generate_context!())
     {

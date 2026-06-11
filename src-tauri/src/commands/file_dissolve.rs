@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::Path;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,7 +24,7 @@ pub fn dissolve_folder(
     // Phase 1: collect all files that need to be moved
     let mut candidates: Vec<(PathBuf, PathBuf)> = Vec::new();
     let root_comp_count = root.components().count();
-    collect_candidates(&root, &root, keep_levels, root_comp_count, &mut candidates)?;
+    super::dissolve_helpers::collect_candidates(&root, &root, keep_levels, root_comp_count, &mut candidates)?;
 
     // Phase 2: build target paths and detect conflicts
     let mut results = Vec::new();
@@ -33,8 +34,8 @@ pub fn dissolve_folder(
     for (src, tgt) in &candidates {
         let idx = results.len();
         results.push(DissolveResult {
-            name: strip_root(&root, src),
-            target: strip_root(&root, tgt),
+            name: super::dissolve_helpers::strip_root(&root, src),
+            target: super::dissolve_helpers::strip_root(&root, tgt),
             action: "move".into(),
         });
         conflict_map.entry(tgt.clone()).or_default().push(idx);
@@ -58,7 +59,7 @@ pub fn dissolve_folder(
             let other_src = &candidates[other_idx].0;
 
             // Same content → skip duplicate
-            if files_equal(first_src, other_src) {
+            if super::dissolve_helpers::files_equal(first_src, other_src) {
                 results[other_idx].action = "skip".into();
                 results[other_idx].target = format!("(重复文件，已跳过)");
                 continue;
@@ -79,7 +80,7 @@ pub fn dissolve_folder(
                 let new_name = format!("{} ({}){}", stem, counter, ext);
                 let new_path = parent.join(&new_name);
                 if !new_path.exists() && !conflict_map.contains_key(&new_path) {
-                    results[other_idx].target = strip_root(&root, &new_path);
+                    results[other_idx].target = super::dissolve_helpers::strip_root(&root, &new_path);
                     break;
                 }
                 counter += 1;
@@ -90,7 +91,7 @@ pub fn dissolve_folder(
                         .map(|s| s.to_string_lossy().to_string())
                         .unwrap_or_default(), ext);
                     let new_path = parent.join(&new_name);
-                    results[other_idx].target = strip_root(&root, &new_path);
+                    results[other_idx].target = super::dissolve_helpers::strip_root(&root, &new_path);
                     break;
                 }
             }
@@ -122,105 +123,8 @@ pub fn dissolve_folder(
                 .map_err(|e| e.to_string())?;
         }
         // Clean empty dirs
-        clean_empty_dirs(&root)?;
+        super::dissolve_helpers::clean_empty_dirs(&root)?;
     }
 
     Ok(results)
-}
-
-/// Collect files that need to move. Returns (source_path, target_path).
-fn collect_candidates(
-    root: &PathBuf,
-    current: &PathBuf,
-    keep_levels: u32,
-    root_comp_count: usize,
-    candidates: &mut Vec<(PathBuf, PathBuf)>,
-) -> Result<(), String> {
-    for entry in std::fs::read_dir(current).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let path = entry.path();
-
-        if path.is_dir() {
-            collect_candidates(root, &path, keep_levels, root_comp_count, candidates)?;
-        } else {
-            // Relative depth = directory levels between root and file (excluding filename)
-            let comp_count = path.components().count();
-            // Subtract root components + 1 (the filename itself)
-            let dir_depth = comp_count.saturating_sub(root_comp_count).saturating_sub(1);
-
-            if dir_depth > keep_levels as usize {
-                let target = get_target_dir(root, &path, keep_levels, root_comp_count);
-                let fname = path.file_name().unwrap_or_default();
-                candidates.push((path.clone(), target.join(fname)));
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Compute target directory based on keep_levels.
-/// keep_levels=0 → file moves to root.
-/// keep_levels=1 → file stays in first subfolder, etc.
-fn get_target_dir(
-    _root: &PathBuf,
-    file_path: &PathBuf,
-    keep_levels: u32,
-    root_comp_count: usize,
-) -> PathBuf {
-    let components: Vec<_> = file_path.components().collect();
-    let mut target = PathBuf::new();
-    for comp in &components[..root_comp_count] {
-        target.push(comp);
-    }
-    // Keep 'keep_levels' directory components (excluding filename)
-    let dir_comps = components.len().saturating_sub(root_comp_count).saturating_sub(1);
-    let keep = (keep_levels as usize).min(dir_comps);
-    for i in 0..keep {
-        target.push(&components[root_comp_count + i]);
-    }
-    target
-}
-
-/// Strip the root prefix from a path, returning a relative path with forward slashes.
-fn strip_root(root: &PathBuf, path: &PathBuf) -> String {
-    path.strip_prefix(root)
-        .map(|p| p.to_string_lossy().replace('\\', "/"))
-        .unwrap_or_else(|_| path.to_string_lossy().replace('\\', "/"))
-}
-
-/// Compare two files byte-by-byte. Returns true if identical.
-fn files_equal(a: &PathBuf, b: &PathBuf) -> bool {
-    if a == b { return true; }
-    let meta_a = std::fs::metadata(a);
-    let meta_b = std::fs::metadata(b);
-    if let (Ok(ma), Ok(mb)) = (meta_a, meta_b) {
-        if ma.len() != mb.len() { return false; }
-    }
-    let data_a = std::fs::read(a);
-    let data_b = std::fs::read(b);
-    match (data_a, data_b) {
-        (Ok(da), Ok(db)) => da == db,
-        _ => false,
-    }
-}
-
-fn clean_empty_dirs(dir: &PathBuf) -> Result<(), String> {
-    // Skip root itself
-    let entries: Vec<PathBuf> = std::fs::read_dir(dir)
-        .map_err(|e| e.to_string())?
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .collect();
-
-    for path in &entries {
-        if path.is_dir() {
-            clean_empty_dirs(path)?;
-            if std::fs::read_dir(path)
-                .map(|mut d| d.next().is_none())
-                .unwrap_or(false)
-            {
-                std::fs::remove_dir(path).map_err(|e| e.to_string())?;
-            }
-        }
-    }
-    Ok(())
 }

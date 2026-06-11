@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, shallowRef, computed } from 'vue'
-import type { FileItem, FilterCondition, FilterRule, DissolveResult } from '@/types'
+import type { FileItem, FilterCondition, FilterRule, DissolveResult, ProgressState } from '@/types'
+import { invoke, Channel } from '@tauri-apps/api/core'
 
 interface RotatePreview {
   path: string
@@ -8,10 +9,9 @@ interface RotatePreview {
   new_orientation: number
   description: string
 }
-import { invoke } from '@tauri-apps/api/core'
 
 export const useFilePulseStore = defineStore('filepulse', () => {
-  // State
+  // ─── State ───────────────────────────────────────
   // shallowRef: avoids deep Vue Proxy wrapping for each file item (~10-100x faster for large arrays)
   const files = shallowRef<FileItem[]>([])
   const selectedPaths = ref<Set<string>>(new Set())
@@ -19,6 +19,22 @@ export const useFilePulseStore = defineStore('filepulse', () => {
   const recursive = ref(true)
   const loading = ref(false)
   const previewMode = ref(false)
+
+  // Streaming progress state
+  const progress = ref<ProgressState>({
+    active: false,
+    operation: '',
+    processed: 0,
+    total: 0,
+    startTime: 0,
+    elapsed: '00:00',
+    estimated: '',
+    done: false,
+    fadeOut: false,
+  })
+
+  // Scan-specific: plain (non-reactive) accumulator to avoid O(n²) spread on each batch
+  let scanBatchItems: FileItem[] = []
 
   // Dynamic filters (pre-populated with 4 defaults)
   const filters = ref<FilterCondition[]>([
@@ -48,7 +64,7 @@ export const useFilePulseStore = defineStore('filepulse', () => {
   const sortKey = ref<'name' | 'size' | 'modified' | 'extension'>('name')
   const sortAsc = ref(true)
 
-  // Computed
+  // ─── Computed ────────────────────────────────────
   const filteredFiles = computed(() => {
     let result = files.value.filter(f => !f.is_dir)
     if (previewMode.value) result = result.filter(file => matchesFilters(file))
@@ -72,7 +88,370 @@ export const useFilePulseStore = defineStore('filepulse', () => {
     return files.value.filter(f => matchesFilters(f)).length
   })
 
-  // Filter management
+  // ─── Progress helpers ────────────────────────────
+  let progressTimer: ReturnType<typeof setInterval> | null = null
+
+  function formatTime(ms: number): string {
+    const totalSec = Math.floor(ms / 1000)
+    const min = Math.floor(totalSec / 60)
+    const sec = totalSec % 60
+    return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+  }
+
+  function startProgress(operation: string, total: number = 0) {
+    progress.value = {
+      active: true,
+      operation,
+      processed: 0,
+      total,
+      startTime: Date.now(),
+      elapsed: '00:00',
+      estimated: '',
+      done: false,
+      fadeOut: false,
+    }
+    // Update elapsed time every second
+    if (progressTimer) clearInterval(progressTimer)
+    progressTimer = setInterval(() => {
+      if (!progress.value.active) return
+      const elapsedMs = Date.now() - progress.value.startTime
+      progress.value.elapsed = formatTime(elapsedMs)
+
+      // Estimate remaining time
+      if (progress.value.total > 0 && progress.value.processed > 0) {
+        const rate = progress.value.processed / elapsedMs
+        const remaining = (progress.value.total - progress.value.processed) / rate
+        progress.value.estimated = formatTime(remaining)
+      }
+    }, 1000)
+  }
+
+  function updateProgress(processed: number, total: number) {
+    progress.value.processed = processed
+    progress.value.total = total
+  }
+
+  function finishProgress() {
+    if (progressTimer) {
+      clearInterval(progressTimer)
+      progressTimer = null
+    }
+    progress.value.done = true
+    // Fade out after 500ms
+    setTimeout(() => {
+      progress.value.fadeOut = true
+      setTimeout(() => {
+        progress.value.active = false
+        progress.value.fadeOut = false
+      }, 300)
+    }, 500)
+  }
+
+  // ─── Streaming: Scan ─────────────────────────────
+  async function scanFiles(path: string) {
+    loading.value = true
+    currentPath.value = path
+    scanBatchItems = []
+    startProgress('scan')
+
+    try {
+      console.time('scan')
+      const channel = new Channel()
+
+      channel.onmessage = (event: any) => {
+        try {
+          switch (event.type) {
+            case 'total':
+              updateProgress(0, event.total)
+              break
+            case 'batch':
+              // Append batch to plain accumulator (no O(n²) spread)
+              scanBatchItems.push(...event.items)
+              updateProgress(event.processed, event.total)
+              break
+            case 'done':
+              files.value = scanBatchItems
+              selectedPaths.value.clear()
+              console.timeEnd('scan')
+              console.log('Files count:', event.total_items, `(${event.elapsed_ms}ms)`)
+              finishProgress()
+              break
+            case 'error':
+              console.error('Scan error:', event.message)
+              files.value = []
+              finishProgress()
+              break
+          }
+        } catch (e) {
+          console.error('Scan channel callback error:', e)
+          finishProgress()
+        }
+      }
+
+      await invoke('scan_files_streaming', {
+        options: { path, recursive: recursive.value },
+        onProgress: channel,
+      })
+    } catch (e) {
+      console.error('Scan failed:', e)
+      files.value = []
+      finishProgress()
+    } finally {
+      loading.value = false
+    }
+  }
+
+  // ─── Streaming: Delete ───────────────────────────
+  async function deleteSelected(): Promise<number> {
+    const paths = Array.from(selectedPaths.value)
+    if (paths.length === 0) return 0
+
+    startProgress('delete', paths.length)
+
+    try {
+      const channel = new Channel()
+      let deletedPaths: string[] = []
+
+      channel.onmessage = (event: any) => {
+        try {
+          switch (event.type) {
+            case 'total':
+              updateProgress(0, event.total)
+              break
+            case 'progress':
+              updateProgress(event.processed, event.total)
+              break
+            case 'done':
+              deletedPaths = event.result.deleted
+              // Update file list by removing deleted paths
+              const deletedSet = new Set(deletedPaths)
+              files.value = files.value.filter(f => !deletedSet.has(f.path))
+              selectedPaths.value.clear()
+              finishProgress()
+              break
+            case 'error':
+              console.error('Delete error:', event.message)
+              finishProgress()
+              break
+          }
+        } catch (e) {
+          console.error('Delete channel callback error:', e)
+          finishProgress()
+        }
+      }
+
+      await invoke('delete_files_streaming', { paths, onProgress: channel })
+      return deletedPaths.length
+    } catch (e) {
+      console.error('Delete failed:', e)
+      finishProgress()
+      return 0
+    }
+  }
+
+  // ─── Streaming: Delete Empty Dirs ────────────────
+  async function deleteEmptyDirs(): Promise<{ deleted: string[]; failed: string[] }> {
+    if (!currentPath.value) return { deleted: [], failed: [] }
+
+    startProgress('delete')
+
+    try {
+      const channel = new Channel()
+      let result = { deleted: [] as string[], failed: [] as string[] }
+
+      channel.onmessage = (event: any) => {
+        try {
+          switch (event.type) {
+            case 'total':
+              updateProgress(0, event.total)
+              break
+            case 'progress':
+              updateProgress(event.processed, event.total)
+              break
+            case 'done':
+              result = event.result
+              finishProgress()
+              break
+            case 'error':
+              console.error('Delete empty dirs error:', event.message)
+              finishProgress()
+              break
+          }
+        } catch (e) {
+          console.error('Delete empty dirs channel callback error:', e)
+          finishProgress()
+        }
+      }
+
+      await invoke('delete_empty_dirs_streaming', {
+        root: currentPath.value, dryRun: false, onProgress: channel,
+      })
+
+      if (result.deleted.length > 0 || result.failed.length > 0) {
+        await scanFiles(currentPath.value)
+      }
+      return result
+    } catch (e) {
+      console.error('Delete empty dirs failed:', e)
+      finishProgress()
+      return { deleted: [], failed: [] }
+    }
+  }
+
+  // ─── Streaming: Dissolve ─────────────────────────
+  async function dissolvePreview(): Promise<DissolveResult[]> {
+    if (!currentPath.value) return []
+    try {
+      return await invoke<DissolveResult[]>('dissolve_folder', {
+        path: currentPath.value, keepLevels: keepLevels.value, dryRun: true,
+      })
+    } catch (e) {
+      console.error('Dissolve preview failed:', e)
+      return []
+    }
+  }
+
+  async function dissolveExecute(): Promise<DissolveResult[]> {
+    if (!currentPath.value) return []
+
+    startProgress('dissolve')
+
+    try {
+      const channel = new Channel()
+      let results: DissolveResult[] = []
+
+      channel.onmessage = (event: any) => {
+        try {
+          switch (event.type) {
+            case 'total':
+              updateProgress(0, event.total)
+              break
+            case 'progress':
+              updateProgress(event.processed, event.total)
+              break
+            case 'done':
+              results = event.results
+              finishProgress()
+              break
+            case 'error':
+              console.error('Dissolve error:', event.message)
+              finishProgress()
+              break
+          }
+        } catch (e) {
+          console.error('Dissolve channel callback error:', e)
+          finishProgress()
+        }
+      }
+
+      await invoke('dissolve_folder_streaming', {
+        path: currentPath.value, keepLevels: keepLevels.value, dryRun: false, onProgress: channel,
+      })
+
+      await scanFiles(currentPath.value)
+      return results
+    } catch (e) {
+      console.error('Dissolve execute failed:', e)
+      finishProgress()
+      return []
+    }
+  }
+
+  // ─── Streaming: Dedupe ──────────────────────────
+  interface DupGroup { files: { path: string; modified: string }[]; size: number }
+
+  async function findDuplicates(): Promise<DupGroup[]> {
+    if (!currentPath.value) return []
+
+    startProgress('dedupe')
+
+    try {
+      const channel = new Channel()
+      let groups: DupGroup[] = []
+
+      channel.onmessage = (event: any) => {
+        try {
+          switch (event.type) {
+            case 'phase':
+              // Could show phase name in progress if needed
+              break
+            case 'total':
+              updateProgress(0, event.total)
+              break
+            case 'progress':
+              updateProgress(event.processed, event.total)
+              break
+            case 'done':
+              groups = event.groups
+              finishProgress()
+              break
+            case 'error':
+              console.error('Dedupe error:', event.message)
+              finishProgress()
+              break
+          }
+        } catch (e) {
+          console.error('Dedupe channel callback error:', e)
+          finishProgress()
+        }
+      }
+
+      await invoke('find_duplicates_streaming', { root: currentPath.value, onProgress: channel })
+      return groups
+    } catch (e) {
+      console.error('Find duplicates failed:', e)
+      finishProgress()
+      return []
+    }
+  }
+
+  async function deleteDuplicates(deletePaths: string[]): Promise<number> {
+    if (deletePaths.length === 0) return 0
+
+    startProgress('dedupe', deletePaths.length)
+
+    try {
+      const channel = new Channel()
+      let deletedCount = 0
+
+      channel.onmessage = (event: any) => {
+        try {
+          switch (event.type) {
+            case 'total':
+              updateProgress(0, event.total)
+              break
+            case 'progress':
+              updateProgress(event.processed, event.total)
+              break
+            case 'delete_done':
+              deletedCount = event.deleted
+              finishProgress()
+              break
+            case 'error':
+              console.error('Delete duplicates error:', event.message)
+              finishProgress()
+              break
+          }
+        } catch (e) {
+          console.error('Delete duplicates channel callback error:', e)
+          finishProgress()
+        }
+      }
+
+      await invoke('delete_duplicates_streaming', {
+        action: { deletePaths }, onProgress: channel,
+      })
+
+      await scanFiles(currentPath.value)
+      return deletedCount
+    } catch (e) {
+      console.error('Delete duplicates failed:', e)
+      finishProgress()
+      return 0
+    }
+  }
+
+  // ─── Filter management ───────────────────────────
   function addFilter(type: FilterCondition['filter_type']) {
     const base: FilterCondition = { filter_type: type, enabled: true, negate: false }
     switch (type) {
@@ -113,25 +492,7 @@ export const useFilePulseStore = defineStore('filepulse', () => {
     previewMode.value = false
   }
 
-  // Methods
-  async function scanFiles(path: string) {
-    loading.value = true
-    currentPath.value = path
-    try {
-      console.time('scan')
-      const result = await invoke<FileItem[]>('scan_files', { options: { path, recursive: recursive.value } })
-      console.timeEnd('scan')
-      console.log('Files count:', result.length)
-      files.value = result
-      selectedPaths.value.clear()
-    } catch (e) {
-      console.error('Scan failed:', e)
-      files.value = []
-    } finally {
-      loading.value = false
-    }
-  }
-
+  // ─── Matching logic ──────────────────────────────
   function matchesFilters(file: FileItem): boolean {
     for (const filter of filters.value) {
       if (!filter.enabled) continue
@@ -211,6 +572,7 @@ export const useFilePulseStore = defineStore('filepulse', () => {
     }
   }
 
+  // ─── Selection ───────────────────────────────────
   function toggleSelect(path: string) {
     if (selectedPaths.value.has(path)) {
       selectedPaths.value.delete(path)
@@ -228,52 +590,7 @@ export const useFilePulseStore = defineStore('filepulse', () => {
     }
   }
 
-  async function deleteSelected(): Promise<number> {
-    const paths = Array.from(selectedPaths.value)
-    if (paths.length === 0) return 0
-    try {
-      const result = await invoke<{ deleted: string[]; failed: string[] }>('delete_files', { paths })
-      const deletedSet = new Set(result.deleted)
-      files.value = files.value.filter(f => !deletedSet.has(f.path))
-      selectedPaths.value.clear()
-      return result.deleted.length
-    } catch (e) {
-      console.error('Delete failed:', e)
-      return 0
-    }
-  }
-
-  async function dissolvePreview(): Promise<DissolveResult[]> {
-    if (!currentPath.value) return []
-    try {
-      return await invoke<DissolveResult[]>('dissolve_folder', {
-        path: currentPath.value, keepLevels: keepLevels.value, dryRun: true,
-      })
-    } catch (e) { console.error('Dissolve preview failed:', e); return [] }
-  }
-
-  async function dissolveExecute(): Promise<DissolveResult[]> {
-    if (!currentPath.value) return []
-    try {
-      const results = await invoke<DissolveResult[]>('dissolve_folder', {
-        path: currentPath.value, keepLevels: keepLevels.value, dryRun: false,
-      })
-      await scanFiles(currentPath.value)
-      return results
-    } catch (e) { console.error('Dissolve execute failed:', e); return [] }
-  }
-
-  async function deleteEmptyDirs(): Promise<{ deleted: string[]; failed: string[] }> {
-    if (!currentPath.value) return { deleted: [], failed: [] }
-    try {
-      const result = await invoke<{ deleted: string[]; failed: string[] }>('delete_empty_dirs', {
-        root: currentPath.value, dryRun: false,
-      })
-      await scanFiles(currentPath.value)
-      return result
-    } catch (e) { console.error('Delete empty dirs failed:', e); return { deleted: [], failed: [] } }
-  }
-
+  // ─── Rotate (unchanged, uses invoke directly) ───
   async function previewRotate(): Promise<{ path: string; before: string; after: string }[]> {
     const paths = Array.from(selectedPaths.value).filter(p => /\.(jpe?g|mp4|mov)$/i.test(p))
     if (paths.length === 0) return []
@@ -302,22 +619,7 @@ export const useFilePulseStore = defineStore('filepulse', () => {
     return m[v] || `未知(${v})`
   }
 
-  interface DupGroup { files: { path: string; modified: string }[]; size: number }
-
-  async function findDuplicates(): Promise<DupGroup[]> {
-    if (!currentPath.value) return []
-    try { return await invoke<DupGroup[]>('find_duplicates', { root: currentPath.value }) }
-    catch (e) { console.error('Find duplicates failed:', e); return [] }
-  }
-
-  async function deleteDuplicates(deletePaths: string[]): Promise<number> {
-    try {
-      await invoke<string[]>('delete_duplicates', { action: { deletePaths } })
-      await scanFiles(currentPath.value)
-      return deletePaths.length
-    } catch (e) { console.error('Delete duplicates failed:', e); return 0 }
-  }
-
+  // ─── Rules ───────────────────────────────────────
   async function loadRules() {
     try { rules.value = await invoke<FilterRule[]>('load_rules') }
     catch (e) { console.error('Load rules failed:', e) }
@@ -355,7 +657,7 @@ export const useFilePulseStore = defineStore('filepulse', () => {
   return {
     files, selectedPaths, currentPath, recursive, loading, previewMode,
     filters, dissolveMode, keepLevels, deleteEmpty, rotateMode, rotateAngle, rotateDir, dedupeMode,
-    rules, sortKey, sortAsc,
+    rules, sortKey, sortAsc, progress,
     filteredFiles, selectedCount, totalCount, matchedCount,
     scanFiles, toggleSelect, selectAll, deleteSelected,
     dissolvePreview, dissolveExecute, deleteEmptyDirs, previewRotate, rotateSelectedFiles,

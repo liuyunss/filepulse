@@ -29,6 +29,7 @@ dirs = "6"
 log = "0.4"
 thiserror = "2"
 md-5 = "0.10"
+rayon = "1"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [

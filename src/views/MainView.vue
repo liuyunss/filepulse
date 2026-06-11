@@ -92,8 +92,11 @@
       @cancel="resolveDlg(false)"
     />
 
-    <!-- 加载中 -->
-    <div v-if="store.loading" class="loading-overlay"><div class="loading-spinner" /><span>扫描中...</span></div>
+    <!-- 加载中 — 进度条严格在底部 statusbar 内 -->
+    <div v-if="store.loading" class="loading-overlay">
+      <div class="loading-spinner" />
+      <span class="loading-text">{{ loadingText }}</span>
+    </div>
 
     <!-- 底部状态栏 -->
     <div class="statusbar">
@@ -101,6 +104,27 @@
         <span class="status-path" :title="store.currentPath">{{ store.currentPath || '未选择文件夹' }}</span>
         <button v-if="store.currentPath" class="clear-btn" @click="clearList" title="清空列表">✕</button>
       </div>
+
+      <!-- 进度状态 — 在状态栏右侧，stats 旁边 -->
+      <Transition name="progress-fade">
+        <div v-if="store.progress.active" class="status-progress" :class="{ 'fade-out': store.progress.fadeOut }">
+          <span class="progress-label">{{ progressLabel }}</span>
+          <div class="progress-bar-wrap">
+            <!-- Indeterminate: infinite animation when total is 0 -->
+            <div v-if="store.progress.total === 0" class="progress-bar-track progress-bar-indeterminate">
+              <div class="progress-bar-fill-indeterminate" />
+            </div>
+            <!-- Determinate: precise progress bar -->
+            <div v-else class="progress-bar-track">
+              <div class="progress-bar-fill" :style="{ width: progressPercent + '%' }" />
+            </div>
+          </div>
+          <span class="progress-time">已用 {{ store.progress.elapsed }}</span>
+          <span v-if="store.progress.total > 0" class="progress-remaining">剩余 {{ formatRemaining(store.progress.total - store.progress.processed) }}</span>
+          <span v-if="store.progress.estimated" class="progress-eta">预计 {{ store.progress.estimated }}</span>
+        </div>
+      </Transition>
+
       <div class="status-stats">
         <span class="stat">选中 <strong>{{ store.selectedCount }}</strong></span>
         <span class="stat">筛选 <strong>{{ store.previewMode ? store.matchedCount : store.totalCount }}</strong></span>
@@ -111,7 +135,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { open } from '@tauri-apps/plugin-dialog'
 import { invoke } from '@tauri-apps/api/core'
 import { useFilePulseStore } from '@/stores/filepulse'
@@ -166,7 +190,6 @@ function sortIcon(key: string) { return store.sortKey === key ? (store.sortAsc ?
 
 function relPath(fullPath: string): string {
   if (!store.currentPath) return fullPath
-  // Normalize slashes and remove trailing separator
   const root = store.currentPath.replace(/\\/g, '/').replace(/\/$/, '')
   const fp = fullPath.replace(/\\/g, '/')
   if (fp.startsWith(root + '/')) return fp.slice(root.length + 1)
@@ -180,6 +203,10 @@ function formatSize(bytes: number): string {
   const i = Math.floor(Math.log(bytes) / Math.log(1024))
   const v = bytes / Math.pow(1024, i)
   return (i > 0 ? v.toFixed(1) : v.toFixed(0)) + ' ' + u[i]
+}
+
+function formatRemaining(count: number): string {
+  return count.toLocaleString()
 }
 
 function fileColor(file: any): string {
@@ -221,6 +248,34 @@ async function openInExplorer(path: string) {
     await invoke('show_in_folder', { path })
   } catch (e) { console.error('openInExplorer failed:', e) }
 }
+
+// ─── Progress display helpers ───────────────────────
+const progressPercent = computed(() => {
+  const p = store.progress
+  if (p.total <= 0) return 0
+  return Math.min(100, Math.round((p.processed / p.total) * 100))
+})
+
+const loadingText = computed(() => {
+  if (!store.progress.active) return '加载中...'
+  switch (store.progress.operation) {
+    case 'scan': return '扫描中...'
+    case 'delete': return '删除中...'
+    case 'dissolve': return '解散文件夹...'
+    case 'dedupe': return '查找重复文件...'
+    default: return '处理中...'
+  }
+})
+
+const progressLabel = computed(() => {
+  switch (store.progress.operation) {
+    case 'scan': return '扫描中...'
+    case 'delete': return '删除中...'
+    case 'dissolve': return '解散中...'
+    case 'dedupe': return '去重中...'
+    default: return '处理中...'
+  }
+})
 
 async function applyPreview() {
   // Tool mode: dissolve folder
@@ -292,7 +347,6 @@ async function applyPreview() {
       await showDialog({ title: '旋转图片', message: '请先在列表中选中要旋转的图片', showCancel: false })
       return
     }
-    // Preview first
     store.loading = true
     try {
       const preview = await store.previewRotate()
@@ -364,7 +418,6 @@ async function applyPreview() {
       const toDelete: string[] = []
       for (const g of groups) {
         const sorted = [...g.files].sort((a, b) => {
-          // Primary: modified time, secondary: keep shorter path when times equal
           const d = a.modified.localeCompare(b.modified)
           if (d !== 0) return keepNewest ? -d : d
           return a.path.length - b.path.length
@@ -389,10 +442,13 @@ async function applyPreview() {
 
 function clearList() { store.files = []; store.currentPath = ''; store.selectedPaths.clear(); store.previewMode = false }
 
+let dragDropUnlisten: (() => void) | null = null
+
 onMounted(async () => {
   try {
     const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow')
-    getCurrentWebviewWindow().onDragDropEvent((event: any) => {
+    const webview = getCurrentWebviewWindow()
+    dragDropUnlisten = await webview.onDragDropEvent((event: any) => {
       const type = event.payload.type
       // Handle drag state
       if (type === 'over') { dragging.value = true }
@@ -407,6 +463,11 @@ onMounted(async () => {
       }
     })
   } catch (e) {}
+})
+
+onUnmounted(() => {
+  dragDropUnlisten?.()
+  dragDropUnlisten = null
 })
 
 async function selectFolder() {
@@ -492,16 +553,70 @@ async function handleDelete() {
 .preview-img { max-width:90vw; max-height:90vh; border-radius:6px; }
 .preview-video { max-width:90vw; max-height:90vh; border-radius:6px; }
 
-.loading-overlay { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; background:rgba(255,255,255,.9); z-index:10; font-size:14px; color:var(--text-muted); }
-.loading-spinner { width:24px; height:24px; border:2px solid var(--border-color); border-top-color:var(--accent-color); border-radius:50%; animation:spin .8s linear infinite; }
+/* Loading overlay */
+.loading-overlay {
+  position:absolute; inset:0; display:flex; flex-direction:column; align-items:center;
+  justify-content:center; gap:12px; background:rgba(255,255,255,.92); z-index:10;
+  font-size:14px; color:var(--text-muted);
+}
+.loading-spinner {
+  width:28px; height:28px; border:2.5px solid var(--border-color);
+  border-top-color:var(--accent-color); border-radius:50%; animation:spin .8s linear infinite;
+}
+.loading-text { font-size:14px; font-weight:500; }
 @keyframes spin { to { transform:rotate(360deg); } }
 
-.statusbar { display:flex; align-items:center; justify-content:space-between; padding:6px 14px; border-top:1px solid var(--border-color); background:var(--bg-secondary); font-size:13px; }
-.status-left { display:flex; align-items:center; gap:8px; max-width:55%; }
+/* Status bar */
+.statusbar {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:6px 14px; border-top:1px solid var(--border-color);
+  background:var(--bg-secondary); font-size:13px; min-height:32px;
+}
+.status-left { display:flex; align-items:center; gap:8px; max-width:40%; }
 .status-path { color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .clear-btn { border:none; background:transparent; color:var(--text-muted); cursor:pointer; font-size:14px; padding:0 4px; flex-shrink:0; }
 .clear-btn:hover { color:var(--danger-color); }
 .status-stats { display:flex; align-items:center; gap:16px; flex-shrink:0; }
 .stat { color:var(--text-muted); }
 .stat strong { color:var(--accent-color); }
+
+/* Progress in status bar */
+.status-progress {
+  display:flex; align-items:center; gap:8px; flex-shrink:0;
+  padding:0 12px; border-left:1px solid var(--border-color);
+  transition: opacity 0.3s ease;
+}
+.status-progress.fade-out { opacity: 0; }
+.progress-label { font-size:12px; font-weight:500; color:var(--accent-color); white-space:nowrap; }
+.progress-bar-wrap { width:120px; flex-shrink:0; }
+.progress-bar-track {
+  height:4px; background:#e8e8e8; border-radius:2px; overflow:hidden;
+}
+.progress-bar-fill {
+  height:100%; background:var(--accent-color); border-radius:2px;
+  transition: width 0.3s ease;
+}
+
+/* Indeterminate progress bar animation */
+.progress-bar-indeterminate {
+  position:relative; overflow:hidden;
+}
+.progress-bar-fill-indeterminate {
+  position:absolute; top:0; left:0; width:40%; height:100%;
+  background:var(--accent-color); border-radius:2px;
+  animation: indeterminate 1.5s ease-in-out infinite;
+}
+@keyframes indeterminate {
+  0% { left: -40%; }
+  100% { left: 100%; }
+}
+
+.progress-time { font-size:11px; color:var(--text-muted); white-space:nowrap; }
+.progress-remaining { font-size:11px; color:var(--text-muted); white-space:nowrap; }
+.progress-eta { font-size:11px; color:var(--accent-color); white-space:nowrap; font-weight:500; }
+
+/* Fade transition */
+.progress-fade-enter-active { transition: opacity 0.2s ease; }
+.progress-fade-leave-active { transition: opacity 0.3s ease; }
+.progress-fade-enter-from, .progress-fade-leave-to { opacity: 0; }
 </style>

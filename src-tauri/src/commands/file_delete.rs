@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+use crate::config::is_system_path;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DeleteResult {
     pub deleted: Vec<String>,
@@ -35,22 +37,6 @@ pub fn delete_files(paths: Vec<String>) -> Result<DeleteResult, String> {
     }
 
     Ok(DeleteResult { deleted, failed })
-}
-
-fn is_system_path(path: &str) -> bool {
-    let system_dirs = [
-        "c:\\windows",
-        "c:\\program files",
-        "c:\\program files (x86)",
-        "/system",
-        "/usr",
-        "/bin",
-        "/sbin",
-        "/etc",
-        "/var",
-        "/root",
-    ];
-    system_dirs.iter().any(|d| path.starts_with(d))
 }
 
 #[tauri::command]
