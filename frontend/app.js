@@ -1,461 +1,701 @@
-// ── 工具 ──
+// ═══════════════════════════════════════════════
+// FilePulse — Standalone Prototype (matches Vue 3 version)
+// ═══════════════════════════════════════════════
+
 const $ = (id) => document.getElementById(id);
-function escapeHtml(str) {
-    if (!str) return '';
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
-function fmtSize(b) {
-    if (b >= 1073741824) return (b / 1073741824).toFixed(2) + ' GB';
-    if (b >= 1048576) return (b / 1048576).toFixed(2) + ' MB';
-    if (b >= 1024) return (b / 1024).toFixed(2) + ' KB';
-    return b + ' B';
-}
-function log(msg) { const el = $('status-text'); if (el) el.textContent = msg; }
 
-// ── 状态 ──
-let currentFiles = [];
-let folderPath = '';
-let tableSort = { key: 'name', asc: true };
-let previewSort = { key: 'name', asc: true };
-let ready = false;
-
-// ── Tauri API 适配层 ──
-// Tauri v2 中 __TAURI__ 可能未注入但 __TAURI_INTERNALS__ 存在
-// 多种方式尝试获取 invoke
-
+// ── Tauri API ──
 let tauriInvoke = null;
+let tauriOpen = null;
 
-function initTauri() {
-    // 方式1: 标准 API
-    if (window.__TAURI__?.core?.invoke) {
-        tauriInvoke = window.__TAURI__.core.invoke;
-        ready = true;
-        log('就绪 ✓ (标准)');
-        return;
-    }
-    // 方式2: 通过内部 API
-    if (window.__TAURI_INTERNALS__?.invoke) {
-        tauriInvoke = window.__TAURI_INTERNALS__.invoke;
-        ready = true;
-        log('就绪 ✓ (内部通道)');
-        return;
-    }
-    // 方式3: 遍历 __TAURI_INTERNALS__ 查找 invoke
-    const internals = window.__TAURI_INTERNALS__;
-    if (internals) {
-        // 尝试 ipc.invoke 或其他路径
-        if (internals.ipc?.invoke) {
-            tauriInvoke = internals.ipc.invoke;
-            ready = true;
-            log('就绪 ✓ (ipc通道)');
-            return;
-        }
-        // 打印内部结构帮助调试
-        const keys = Object.keys(internals).join(',');
-        log('TAURI_INTERNALS keys: ' + keys);
-    }
-    ready = false;
-    log('Tauri 未就绪。在浏览器中请用「选择文件夹」按钮');
-}
-
-function init() {
-    initTauri();
-    if (!ready) {
-        // 浏览器模式：允许通过 webkitdirectory 选择文件夹
-        log('浏览器模式 — 点击按钮选择文件夹');
-    }
-}
-
-// ── 选择文件夹（Rust 弹原生对话框） ──
-async function selectFolder() {
-    if (!ready || !tauriInvoke) {
-        // 浏览器模式
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.webkitdirectory = true;
-        input.onchange = (e) => {
-            const files = e.target.files;
-            if (!files?.length) return;
-            const fn = files[0].webkitRelativePath.split('/')[0];
-            $('folder-path').textContent = fn;
-            currentFiles = Array.from(files).filter(f => f.name).map(f => ({
-                name: f.name,
-                path: f.webkitRelativePath,
-                size: f.size,
-                extension: f.name.includes('.') ? f.name.split('.').pop() : '',
-                modified: f.lastModified ? new Date(f.lastModified).toISOString().slice(0,19).replace('T',' ') : ''
-            }));
-            folderPath = fn;
-            renderTable();
-            updateStatus();
-            log('浏览器模式: 已加载 ' + currentFiles.length + ' 个文件');
-        };
-        input.click();
-        return;
-    }
+async function initTauri() {
     try {
-        log('正在打开文件夹选择框...');
-        const path = await tauriInvoke('pick_folder');
-        if (path) {
-            $('folder-path').textContent = path;
-            $('folder-path').title = path;
-            await scanFolder(path);
-        } else {
-            log('已取消');
+        const core = await import('https://unpkg.com/@tauri-apps/api/core');
+        tauriInvoke = core.invoke;
+        const dialog = await import('https://unpkg.com/@tauri-apps/plugin-dialog');
+        tauriOpen = dialog.open;
+    } catch {
+        // Fallback: try window.__TAURI__
+        if (window.__TAURI__) {
+            tauriInvoke = window.__TAURI__.core?.invoke || window.__TAURI__.invoke;
+            tauriOpen = window.__TAURI__.dialog?.open;
         }
-    } catch (e) {
-        log('选择失败: ' + String(e));
     }
 }
 
-async function scanFolder(path) {
-    try {
-        log('正在扫描...');
-        currentFiles = await tauriInvoke('scan_folder', { path });
-        folderPath = path;
-        renderTable();
-        updateStatus();
-        log('已加载 ' + currentFiles.length + ' 个文件');
-    } catch (e) {
-        log('扫描失败: ' + String(e));
-    }
-}
+// ── State ──
+const TYPE_COLORS = {
+    image:'#52c41a', video:'#ff4d4f', audio:'#722ed1',
+    doc:'#1890ff', archive:'#fa8c16', code:'#0ea5e9', exe:'#8c8c8c', folder:'#d9d9d9',
+};
 
-// ── 渲染 ──
-function renderTable(files) {
-    const data = files || currentFiles;
-    const tbody = $('file-tbody');
-    if (data.length === 0) {
-        tbody.innerHTML = '';
-        $('file-table').style.display = 'none';
-        $('empty-state').style.display = 'flex';
-        return;
-    }
-    $('file-table').style.display = '';
-    $('empty-state').style.display = 'none';
-    tbody.innerHTML = data.map(f => `
-        <tr data-path="${escapeHtml(f.path)}">
-            <td class="col-chk"><input type="checkbox" class="chk" data-path="${escapeHtml(f.path)}"></td>
-            <td class="col-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</td>
-            <td class="col-size">${fmtSize(f.size)}</td>
-            <td class="col-type">${escapeHtml(f.extension || '-')}</td>
-            <td class="col-date">${f.modified ? f.modified.slice(0,10) : ''}</td>
-            <td class="col-path" title="${escapeHtml(f.path)}">${escapeHtml(f.path)}</td>
-        </tr>
-    `).join('');
-}
+const EXT_MAP = {
+    jpg:'image',jpeg:'image',png:'image',gif:'image',bmp:'image',svg:'image',webp:'image',ico:'image',
+    mp4:'video',avi:'video',mkv:'video',mov:'video',wmv:'video',flv:'video',webm:'video',
+    mp3:'audio',wav:'audio',flac:'audio',aac:'audio',ogg:'audio',wma:'audio',m4a:'audio',
+    pdf:'doc',doc:'doc',docx:'doc',xls:'doc',xlsx:'doc',ppt:'doc',pptx:'doc',txt:'doc',md:'doc',
+    zip:'archive',rar:'archive','7z':'archive',tar:'archive',gz:'archive',bz2:'archive',
+    js:'code',ts:'code',py:'code',java:'code',cpp:'code',rs:'code',go:'code',vue:'code',html:'code',css:'code',
+    exe:'exe',msi:'exe',bat:'exe',sh:'exe',apk:'exe',app:'exe',
+};
 
-function updateStatus() {
-    $('file-count').textContent = currentFiles.length + ' 个文件';
-    $('empty-state').style.display = currentFiles.length === 0 ? 'flex' : 'none';
-    $('file-table').style.display = currentFiles.length === 0 ? 'none' : '';
-}
+const PREVIEWABLE = new Set(['jpg','jpeg','png','gif','bmp','svg','webp','ico','mp4','avi','mkv','mov','webm']);
+const IMG_EXTS = new Set(['jpg','jpeg','png','gif','bmp','svg','webp','ico']);
 
-// ── 排序 ──
-function sortTable(key) {
-    if (tableSort.key === key) { tableSort.asc = !tableSort.asc; }
-    else { tableSort.key = key; tableSort.asc = true; }
-    document.querySelectorAll('#file-table th.sortable').forEach(th => {
-        th.classList.remove('sort-asc', 'sort-desc');
-        if (th.dataset.sort === key) th.classList.add(tableSort.asc ? 'sort-asc' : 'sort-desc');
-    });
-    renderTable(sortList(currentFiles, tableSort));
-}
-function sortList(list, { key, asc }) {
-    return [...list].sort((a, b) => {
-        let va = a[key] ?? '', vb = b[key] ?? '';
-        if (key === 'size') { va = a.size; vb = b.size; }
-        return (va < vb ? -1 : va > vb ? 1 : 0) * (asc ? 1 : -1);
-    });
-}
+let state = {
+    files: [],
+    currentPath: '',
+    selectedPaths: new Set(),
+    loading: false,
+    previewMode: false,
+    sortKey: 'name',
+    sortAsc: true,
+    // Filters
+    filters: [
+        { filter_type:'name', enabled:false, operator:'contains', value:'', negate:false },
+        { filter_type:'extension', enabled:false, value:'', negate:false },
+        { filter_type:'size', enabled:false, operator:'>', value:'', unit:'MB', negate:false },
+        { filter_type:'date', enabled:false, operator:'recent', value:'', unit:'day', negate:false },
+    ],
+    // Tools
+    deleteEmpty: false,
+    dissolveMode: false,
+    keepLevels: 1,
+    dedupeMode: false,
+    rotateMode: false,
+    rotateDir: 'cw',
+    rotateAngle: 90,
+    // Rules
+    rules: [],
+    // UI
+    filterEdit: false,
+    ruleEdit: false,
+    hoverFilterIdx: -1,
+};
 
-// ── 筛选 ──
-function filterFiles() {
-    return currentFiles.filter(f => {
-        if ($('size-filter').checked) {
-            const op = $('size-op').value, v = parseFloat($('size-value').value);
-            if (isNaN(v)) return true;
-            const unit = $('size-unit').value;
-            let s = f.size / 1048576;
-            if (unit === 'KB') s = f.size / 1024; else if (unit === 'GB') s = f.size / 1073741824;
-            let m = op === 'gt' ? s > v : op === 'lt' ? s < v : Math.abs(s - v) < 0.001;
-            if (!m) return false;
+// ── Helpers ──
+function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function fmtSize(b) {
+    if (b === 0) return '0';
+    const u = ['','K','M','G','T'];
+    const i = Math.floor(Math.log(b) / Math.log(1024));
+    return (i > 0 ? (b / Math.pow(1024, i)).toFixed(1) : b.toFixed(0)) + ' ' + u[i];
+}
+function fileColor(file) {
+    if (file.is_dir) return TYPE_COLORS.folder;
+    return TYPE_COLORS[EXT_MAP[file.extension?.toLowerCase()]] || '#d9d9d9';
+}
+function relPath(fullPath) {
+    if (!state.currentPath) return fullPath;
+    const root = state.currentPath.replace(/\\/g, '/').replace(/\/$/, '');
+    const fp = fullPath.replace(/\\/g, '/');
+    if (fp.startsWith(root + '/')) return fp.slice(root.length + 1);
+    if (fp === root) return '';
+    return fp;
+}
+function typeLabel(t) { return {name:'名称',extension:'后缀',size:'大小',date:'日期'}[t] || t; }
+function ruleSummary(rule) {
+    const active = rule.filters.filter(f => f.enabled);
+    if (active.length === 0) return '无条件';
+    return active.map(f => {
+        const l = typeLabel(f.filter_type);
+        switch (f.filter_type) {
+            case 'name': return `${l}:${f.operator==='contains'?'含':f.operator==='prefix'?'前':'后'}${f.value}`;
+            case 'extension': return `${l}:${f.value||'*'}`;
+            case 'size': return `${l}${f.operator}${f.value}${f.unit}`;
+            case 'date': return `${l}:${f.operator==='recent'?'近':'早'}${f.value}${f.unit}`;
+            default: return l;
         }
-        if ($('ext-filter').checked) {
-            const exts = $('ext-value').value.split(',').map(e => e.trim().toLowerCase()).filter(e => e);
-            if (!exts.includes('.' + (f.extension || '').toLowerCase())) return false;
-        }
-        if ($('date-filter').checked) {
-            const days = parseInt($('date-value').value);
-            if (isNaN(days)) return true;
-            const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
-            if (isNaN(new Date(f.modified).getTime()) || new Date(f.modified) < cutoff) return false;
-        }
-        return true;
-    });
-}
-function applyFilters() {
-    if (currentFiles.length === 0) { log('请先选择文件夹'); return; }
-    const filtered = sortList(filterFiles(), tableSort);
-    const set = new Set(filtered.map(f => f.path));
-    document.querySelectorAll('#file-tbody tr').forEach(row => {
-        row.style.display = set.has(row.dataset.path) ? '' : 'none';
-    });
-    $('filter-stats').textContent = '筛选：' + filtered.length + ' / ' + currentFiles.length;
+    }).join(' / ');
 }
 
-// ── 预览弹窗 ──
-function previewFiles() {
-    if (currentFiles.length === 0) { alert('请先选择文件夹'); return; }
-    const filtered = filterFiles();
-    if (filtered.length === 0) { alert('没有匹配的文件'); return; }
-    previewSort = { key: 'name', asc: true };
-    renderPreview(sortList(filtered, previewSort));
-    $('preview-overlay').classList.add('show');
-    $('pv-select-all').checked = true;
-    document.querySelectorAll('#preview-table th.sortable').forEach(th => {
-        th.classList.remove('sort-asc', 'sort-desc');
-        if (th.dataset.sort === 'name') th.classList.add('sort-asc');
-    });
-}
-function renderPreview(files) {
-    $('preview-count').textContent = files.length;
-    $('preview-tbody').innerHTML = files.map(f => `
-        <tr data-path="${escapeHtml(f.path)}">
-            <td class="pv-chk"><input type="checkbox" class="pv-chk-item" data-path="${escapeHtml(f.path)}" checked></td>
-            <td class="pv-name">${escapeHtml(f.name)}</td>
-            <td class="pv-size">${fmtSize(f.size)}</td>
-            <td class="pv-type">${escapeHtml(f.extension || '-')}</td>
-            <td class="pv-path">${escapeHtml(f.path)}</td>
-        </tr>
-    `).join('');
-}
-function sortPreview(key) {
-    if (previewSort.key === key) { previewSort.asc = !previewSort.asc; }
-    else { previewSort.key = key; previewSort.asc = true; }
-    document.querySelectorAll('#preview-table th.sortable').forEach(th => {
-        th.classList.remove('sort-asc', 'sort-desc');
-        if (th.dataset.sort === key) th.classList.add(previewSort.asc ? 'sort-asc' : 'sort-desc');
-    });
-    renderPreview(sortList(filterFiles(), previewSort));
-}
-function closePreview() { $('preview-overlay').classList.remove('show'); }
-
-// ── 确认删除 ──
-async function confirmDelete() {
-    const checked = Array.from(document.querySelectorAll('.pv-chk-item:checked')).map(cb => cb.dataset.path);
-    if (checked.length === 0) { alert('请勾选文件'); return; }
-    if (!confirm('⚠️ 将真正删除以下 ' + checked.length + ' 个文件！\n\n位置: ' + folderPath + '\n\n继续？')) return;
-    try {
-        log('正在删除...');
-        const deleted = await tauriInvoke('delete_files', { paths: checked, baseDir: folderPath });
-        log('已删除 ' + deleted + ' 个文件，正在刷新...');
-        await scanFolder(folderPath);
-    } catch (e) {
-        alert('删除失败: ' + e);
-        log('删除失败');
-    }
-    closePreview();
-}
-
-// ── 空文件 ──
-let emptyFiles = [];
-function scanEmpty() {
-    if (currentFiles.length === 0) { alert('请先选择文件夹'); return; }
-    const exts = $('empty-ext-value').value.split(',').map(e => e.trim().toLowerCase()).filter(e => e);
-    if (!exts.length) { alert('请输入后缀'); return; }
-    emptyFiles = currentFiles.filter(f => f.size === 0 && exts.includes('.' + (f.extension || '').toLowerCase()));
-    const pv = $('empty-cleanup-preview');
-    if (!emptyFiles.length) {
-        $('empty-cleanup-count').textContent = '未找到';
-        $('empty-cleanup-list').innerHTML = ''; pv.style.display = 'block'; $('btn-delete-empty').disabled = true;
-        return;
-    }
-    const map = {};
-    emptyFiles.forEach(f => {
-        const fp = f.path.split('/').slice(0, -1).join('/') || '(根目录)';
-        (map[fp] = map[fp] || []).push(f);
-    });
-    $('empty-cleanup-count').textContent = '找到 ' + emptyFiles.length + ' 个空文件';
-    $('empty-cleanup-list').innerHTML = Object.keys(map).sort().map(folder => `
-        <div style="margin:6px 0"><b>${escapeHtml(folder)}</b></div>
-        ${map[folder].map(f => `
-            <label style="display:block;font-size:11px;color:#64748B;margin-left:12px;">
-                <input type="checkbox" class="ef-chk" data-path="${escapeHtml(f.path)}" checked> ${escapeHtml(f.name)} (0 KB)
-            </label>
-        `).join('')}
-    `).join('');
-    pv.style.display = 'block'; $('btn-delete-empty').disabled = false;
-}
-async function deleteEmpty() {
-    const paths = Array.from(document.querySelectorAll('.ef-chk:checked')).map(cb => cb.dataset.path);
-    if (!paths.length) { alert('请勾选'); return; }
-    if (!confirm('删除 ' + paths.length + ' 个空文件？位置: ' + folderPath)) return;
-    await tauriInvoke('delete_files', { paths, baseDir: folderPath });
-    await scanFolder(folderPath);
-    scanEmpty();
-}
-
-// ── 解散 ──
-function previewDissolve() {
-    if (currentFiles.length === 0) { alert('请先选择文件夹'); return; }
-    $('dissolve-preview').innerHTML = '<b>解散预览</b><pre style="font-size:11px;margin-top:4px;">test/\n├── docs/\n│   └── sub/\n│       └── note.txt\n└── video/\n    └── movie.mp4</pre><div style="color:#DC2626;margin-top:4px;">将删除空文件夹：sub/</div>';
-    $('dissolve-preview').style.display = 'block';
-}
-
-// ── 规则 ──
-function getRules() { try { return JSON.parse(localStorage.getItem('filepulse_rules') || '[]'); } catch { return []; } }
-function saveRule(name) {
-    getRules().push({ name, conditions: {
-        size: $('size-filter').checked, sizeOp: $('size-op').value, sizeValue: $('size-value').value, sizeUnit: $('size-unit').value,
-        ext: $('ext-filter').checked, extValue: $('ext-value').value,
-        date: $('date-filter').checked, dateValue: $('date-value').value
-    }});
-    localStorage.setItem('filepulse_rules', JSON.stringify(getRules()));
-    renderRules(); alert('已保存：' + name);
-}
-function renderRules() {
-    $('rules-list').innerHTML = getRules().map((r, i) =>
-        `<label><input type="checkbox" class="rule-chk" data-index="${i}"> ${escapeHtml(r.name)}</label>`).join('');
-}
-
-// ── Tab ──
-function switchTab(name) {
-    document.querySelectorAll('.tools-tabs .tab').forEach(t => t.classList.remove('active'));
-    const activeTab = document.querySelector('.tab[data-tab="' + name + '"]');
-    if (activeTab) activeTab.classList.add('active');
-    document.querySelectorAll('.tab-content').forEach(p => p.style.display = 'none');
-    const content = $('tab-' + name);
-    if (content) content.style.display = '';
-}
-
-// ── 拖拽处理 ──
-function setupDragDrop() {
-    // 方式1: Tauri 原生拖拽事件
-    if (ready && window.__TAURI__.event) {
-        try {
-            window.__TAURI__.event.listen('tauri://drag-drop', (e) => {
-                const paths = e.payload?.paths;
-                if (paths && paths.length > 0) {
-                    const p = paths[0];
-                    $('folder-path').textContent = p;
-                    $('folder-path').title = p;
-                    scanFolder(p);
-                }
-            });
-            // 也监听 tauri:// 开头的其他拖拽事件
-            window.__TAURI__.event.listen('tauri://file-drop', (e) => {
-                const paths = e.payload?.paths;
-                if (paths && paths.length > 0) {
-                    $('folder-path').textContent = paths[0];
-                    scanFolder(paths[0]);
-                }
-            });
-        } catch (e) { /* 忽略，用浏览器拖拽兜底 */ }
-    }
-
-    // 方式2: 浏览器级拖拽兜底
-    let dc = 0;
-    document.addEventListener('dragenter', e => { e.preventDefault(); e.stopPropagation(); dc++; document.body.classList.add('drag-over'); });
-    document.addEventListener('dragleave', e => { e.preventDefault(); e.stopPropagation(); dc--; if (dc <= 0) { dc = 0; document.body.classList.remove('drag-over'); } });
-    document.addEventListener('dragover', e => { e.preventDefault(); e.stopPropagation(); });
-    document.addEventListener('drop', async e => {
-        e.preventDefault(); e.stopPropagation(); dc = 0; document.body.classList.remove('drag-over');
-
-        // 浏览器模式：拖入文件直接处理
-        if (!ready) {
-            const files = e.dataTransfer.files;
-            if (files && files.length > 0) {
-                const fn = files[0].webkitRelativePath || '';
-                const folder = fn ? fn.split('/')[0] : '拖入文件';
-                $('folder-path').textContent = folder;
-                currentFiles = Array.from(files).filter(f => f.name).map(f => ({
-                    name: f.name,
-                    path: f.webkitRelativePath || f.name,
-                    size: f.size,
-                    extension: f.name.includes('.') ? f.name.split('.').pop() : '',
-                    modified: f.lastModified ? new Date(f.lastModified).toISOString().slice(0,19).replace('T',' ') : ''
-                }));
-                folderPath = folder;
-                renderTable();
-                updateStatus();
-                log('已加载 ' + currentFiles.length + ' 个文件');
-                return;
+// ── Filter matching ──
+function matchesFilters(file) {
+    for (const f of state.filters) {
+        if (!f.enabled) continue;
+        let match = false;
+        switch (f.filter_type) {
+            case 'name': {
+                const val = (f.value || '').toLowerCase();
+                const name = (file.name || '').toLowerCase();
+                if (f.operator === 'contains') match = name.includes(val);
+                else if (f.operator === 'prefix') match = name.startsWith(val);
+                else if (f.operator === 'suffix') match = name.endsWith(val);
+                break;
             }
-            alert('浏览器不支持拖入文件夹，请点击「选择文件夹」按钮');
-            return;
+            case 'extension': {
+                const exts = (f.value || '').split(',').map(e => e.trim().toLowerCase().replace('.',''));
+                match = exts.includes((file.extension || '').toLowerCase());
+                break;
+            }
+            case 'size': {
+                if (!f.value || f.value === '0') { match = false; break; }
+                const num = parseFloat(f.value) || 0;
+                const threshold = f.unit === 'KB' ? num*1024 : f.unit === 'GB' ? num*1024*1024*1024 : num*1024*1024;
+                if (f.operator === '>') match = file.size > threshold;
+                else if (f.operator === '<') match = file.size < threshold;
+                else if (f.operator === '=') match = Math.abs(file.size - threshold) < 1024;
+                break;
+            }
+            case 'date': {
+                const fileDate = new Date(file.modified);
+                const now = new Date();
+                const val = parseInt(f.value || '0');
+                const ms = f.unit === 'hour' ? val*3600000 : f.unit === 'month' ? val*30*86400000 : val*86400000;
+                if (f.operator === 'recent') match = (now - fileDate) < ms;
+                else if (f.operator === 'before') match = (now - fileDate) > ms;
+                break;
+            }
         }
+        if (f.negate) match = !match;
+        if (!match) return false;
+    }
+    return true;
+}
 
-        // Tauri 模式：弹原生对话框
-        await selectFolder();
+function getFilteredFiles() {
+    let result = state.files.filter(f => !f.is_dir);
+    if (state.previewMode) result = result.filter(matchesFilters);
+    result.sort((a, b) => {
+        let cmp = 0;
+        switch (state.sortKey) {
+            case 'name': cmp = a.name.localeCompare(b.name); break;
+            case 'size': cmp = a.size - b.size; break;
+            case 'modified': cmp = (a.modified||'').localeCompare(b.modified||''); break;
+            case 'extension': cmp = (a.extension||'').localeCompare(b.extension||''); break;
+        }
+        return state.sortAsc ? cmp : -cmp;
+    });
+    return result;
+}
+
+// ── Dialog ──
+let dlgResolve = null;
+function showDialog({ title, message, list, kind, confirmText, cancelText, showCancel, wide }) {
+    return new Promise(resolve => {
+        dlgResolve = resolve;
+        $('dlg-title').textContent = title || '';
+        $('dlg-message').textContent = message || '';
+        $('dlg-message').style.display = message ? '' : 'none';
+        const listEl = $('dlg-list');
+        listEl.innerHTML = '';
+        if (list && list.length) {
+            list.forEach(item => { const li = document.createElement('li'); li.textContent = item; listEl.appendChild(li); });
+            listEl.style.display = '';
+        } else { listEl.style.display = 'none'; }
+        $('dlg-thumbs').innerHTML = '';
+        const confirmBtn = $('dlg-confirm');
+        confirmBtn.textContent = confirmText || '确认';
+        confirmBtn.className = 'dlg-btn dlg-btn--confirm' + ((kind === 'danger' || kind === 'warning') ? ' dlg-btn--danger' : '');
+        $('dlg-cancel').textContent = cancelText || '取消';
+        $('dlg-cancel').style.display = showCancel === false ? 'none' : '';
+        $('dlg-overlay').style.display = '';
+    });
+}
+function closeDlg(v) { $('dlg-overlay').style.display = 'none'; dlgResolve?.(v); dlgResolve = null; }
+
+// ── Render ──
+function renderFilters() {
+    const list = $('filter-list');
+    const empty = $('filter-empty');
+    const toolActive = state.deleteEmpty || state.dissolveMode || state.rotateMode || state.dedupeMode;
+    $('filter-section').classList.toggle('disabled', toolActive);
+    $('rule-section').classList.toggle('disabled', toolActive);
+
+    if (state.filters.length === 0) { list.innerHTML = ''; empty.style.display = ''; return; }
+    empty.style.display = 'none';
+    list.innerHTML = state.filters.map((f, i) => {
+        const color = {name:'#1890ff',extension:'#52c41a',size:'#fa8c16',date:'#8b5cf6'}[f.filter_type] || '#999';
+        const editing = state.filterEdit && state.hoverFilterIdx === i;
+        let controls = '';
+        if (f.filter_type === 'name') {
+            controls = `
+                <select class="sel f-op" data-i="${i}" ${toolActive?'disabled':''}>
+                    <option value="contains" ${f.operator==='contains'?'selected':''}>包含</option>
+                    <option value="prefix" ${f.operator==='prefix'?'selected':''}>前缀</option>
+                    <option value="suffix" ${f.operator==='suffix'?'selected':''}>后缀</option>
+                </select>
+                <input class="inp" data-i="${i}" data-field="value" value="${escapeHtml(f.value||'')}" placeholder="关键词" ${toolActive?'disabled':''} />`;
+        } else if (f.filter_type === 'extension') {
+            controls = `
+                <select class="sel f-ext-cat" data-i="${i}" ${toolActive?'disabled':''}>
+                    <option value="">分类</option>
+                    <option value=".jpg,.jpeg,.png,.gif,.bmp,.svg,.webp,.ico">图片</option>
+                    <option value=".mp4,.avi,.mkv,.mov,.wmv,.flv,.webm">视频</option>
+                    <option value=".mp3,.wav,.flac,.aac,.ogg,.wma,.m4a">音频</option>
+                    <option value=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md">文档</option>
+                    <option value=".zip,.rar,.7z,.tar,.gz,.bz2">压缩包</option>
+                    <option value=".js,.ts,.py,.java,.cpp,.rs,.go,.vue,.html,.css">代码</option>
+                    <option value=".exe,.msi,.bat,.sh,.apk,.app">可执行</option>
+                </select>
+                <input class="inp" data-i="${i}" data-field="value" value="${escapeHtml(f.value||'')}" placeholder=".log,.tmp" ${toolActive?'disabled':''} />`;
+        } else if (f.filter_type === 'size') {
+            controls = `
+                <select class="sel f-op" data-i="${i}" ${toolActive?'disabled':''}>
+                    <option value=">" ${f.operator==='>'?'selected':''}>&gt;</option>
+                    <option value="<" ${f.operator==='<'?'selected':''}>&lt;</option>
+                    <option value="=" ${f.operator==='='?'selected':''}>=</option>
+                </select>
+                <input class="inp-s" data-i="${i}" data-field="value" type="number" value="${f.value||''}" placeholder="10" ${toolActive?'disabled':''} />
+                <select class="sel f-unit" data-i="${i}" ${toolActive?'disabled':''}>
+                    <option value="KB" ${f.unit==='KB'?'selected':''}>KB</option>
+                    <option value="MB" ${f.unit==='MB'?'selected':''}>MB</option>
+                    <option value="GB" ${f.unit==='GB'?'selected':''}>GB</option>
+                </select>`;
+        } else if (f.filter_type === 'date') {
+            controls = `
+                <select class="sel f-op" data-i="${i}" ${toolActive?'disabled':''}>
+                    <option value="recent" ${f.operator==='recent'?'selected':''}>最近</option>
+                    <option value="before" ${f.operator==='before'?'selected':''}>早于</option>
+                </select>
+                <input class="inp-xs" data-i="${i}" data-field="value" type="number" value="${f.value||''}" placeholder="7" ${toolActive?'disabled':''} />
+                <select class="sel f-unit" data-i="${i}" ${toolActive?'disabled':''}>
+                    <option value="day" ${f.unit==='day'?'selected':''}>天</option>
+                    <option value="hour" ${f.unit==='hour'?'selected':''}>时</option>
+                    <option value="month" ${f.unit==='month'?'selected':''}>月</option>
+                </select>`;
+        }
+        return `<div class="filter-line" data-i="${i}" style="border-left-color:${color}">
+            <span class="f-badge ${editing?'hide':''}" style="background:${color}">${typeLabel(f.filter_type)}</span>
+            <label class="f-toggle"><input type="checkbox" class="f-enabled" data-i="${i}" ${f.enabled?'checked':''} ${toolActive?'disabled':''} /></label>
+            ${controls}
+            <label class="negate"><input type="checkbox" class="f-negate" data-i="${i}" ${f.negate?'checked':''} ${toolActive?'disabled':''} /> 取反</label>
+            ${editing ? `<button class="del-btn" data-del="${i}">✕</button>` : ''}
+        </div>`;
+    }).join('');
+
+    // Bind events
+    list.querySelectorAll('.f-enabled').forEach(el => {
+        el.addEventListener('change', () => { state.filters[+el.dataset.i].enabled = el.checked; renderTable(); });
+    });
+    list.querySelectorAll('.f-negate').forEach(el => {
+        el.addEventListener('change', () => { state.filters[+el.dataset.i].negate = el.checked; renderTable(); });
+    });
+    list.querySelectorAll('.f-op').forEach(el => {
+        el.addEventListener('change', () => { state.filters[+el.dataset.i].operator = el.value; renderTable(); });
+    });
+    list.querySelectorAll('.f-unit').forEach(el => {
+        el.addEventListener('change', () => { state.filters[+el.dataset.i].unit = el.value; renderTable(); });
+    });
+    list.querySelectorAll('.f-ext-cat').forEach(el => {
+        el.addEventListener('change', () => { state.filters[+el.dataset.i].value = el.value; renderFilters(); renderTable(); });
+    });
+    list.querySelectorAll('input[data-field]').forEach(el => {
+        el.addEventListener('input', () => { state.filters[+el.dataset.i].value = el.value; renderTable(); });
+    });
+    list.querySelectorAll('.del-btn').forEach(el => {
+        el.addEventListener('click', () => { state.filters.splice(+el.dataset.del, 1); renderFilters(); renderTable(); });
+    });
+    list.querySelectorAll('.filter-line').forEach(el => {
+        el.addEventListener('mouseenter', () => { state.hoverFilterIdx = +el.dataset.i; });
+        el.addEventListener('mouseleave', () => { state.hoverFilterIdx = -1; renderFilters(); });
     });
 }
 
-// ── DOM就绪 ──
-document.addEventListener('DOMContentLoaded', () => {
-    init();
-    setupDragDrop();
-
-    $('btn-open').addEventListener('click', selectFolder);
-    $('btn-preview').addEventListener('click', previewFiles);
-    $('btn-delete').addEventListener('click', () => {
-        if (currentFiles.length === 0) { alert('请先选择文件夹'); return; }
-        previewFiles();
-    });
-    $('btn-close-preview').addEventListener('click', closePreview);
-    $('btn-cancel-preview').addEventListener('click', closePreview);
-    $('btn-confirm-preview').addEventListener('click', confirmDelete);
-    $('pv-select-all').addEventListener('change', e => {
-        document.querySelectorAll('.pv-chk-item').forEach(cb => cb.checked = e.target.checked);
-    });
-
-    document.querySelectorAll('#file-table th.sortable').forEach(th => {
-        th.addEventListener('click', () => sortTable(th.dataset.sort));
-    });
-    document.querySelectorAll('#preview-table th.sortable').forEach(th => {
-        th.addEventListener('click', () => sortPreview(th.dataset.sort));
-    });
-
-    $('btn-advanced').addEventListener('click', () => {
-        const p = $('tools-panel');
-        p.style.display = (p.style.display === 'none' || p.style.display === '') ? '' : 'none';
-    });
-    $('btn-close-tools').addEventListener('click', () => $('tools-panel').style.display = 'none');
-    document.querySelectorAll('.tools-tabs .tab').forEach(t => {
-        t.addEventListener('click', () => switchTab(t.dataset.tab));
-    });
-
-    $('btn-scan-empty').addEventListener('click', scanEmpty);
-    $('btn-delete-empty').addEventListener('click', deleteEmpty);
-    $('btn-preview-dissolve').addEventListener('click', previewDissolve);
-
-    $('btn-save-rule').addEventListener('click', () => { const n = prompt('规则名称：'); if (n) saveRule(n); });
-    $('btn-delete-rule').addEventListener('click', () => {
-        const chk = document.querySelector('.rule-chk:checked');
-        if (!chk) return alert('请选择规则');
-        const i = parseInt(chk.dataset.index);
-        if (isNaN(i)) return;
-        const rules = getRules();
-        if (confirm('删除 "' + rules[i].name + '"？')) { rules.splice(i, 1); localStorage.setItem('filepulse_rules', JSON.stringify(rules)); renderRules(); }
-    });
-
-    $('select-all').addEventListener('change', e => {
-        document.querySelectorAll('.chk').forEach(cb => {
-            if (cb.closest('tr')?.style.display !== 'none') cb.checked = e.target.checked;
+function renderRules() {
+    const list = $('rule-list');
+    const empty = $('rule-empty');
+    if (state.rules.length === 0) { list.innerHTML = ''; empty.style.display = ''; return; }
+    empty.style.display = 'none';
+    list.innerHTML = state.rules.map((r, idx) => {
+        const editing = state.ruleEdit;
+        return `<div class="rule-line ${editing?'editing':''}">
+            <span class="r-num">${idx+1}</span>
+            <span class="r-name">${escapeHtml(r.name)}</span>
+            <span class="r-summary" title="${escapeHtml(ruleSummary(r))}">${escapeHtml(ruleSummary(r))}</span>
+            <button class="rule-load-btn" data-load="${idx}">加载</button>
+            ${editing ? `<button class="rule-del-btn" data-del="${r.id}">✕</button>` : ''}
+        </div>`;
+    }).join('');
+    list.querySelectorAll('.rule-load-btn').forEach(el => {
+        el.addEventListener('click', () => {
+            const rule = state.rules[+el.dataset.load];
+            state.filters = JSON.parse(JSON.stringify(rule.filters));
+            state.previewMode = true;
+            renderFilters(); renderTable();
         });
     });
-    $('file-tbody').addEventListener('click', e => {
-        const row = e.target.closest('tr');
-        const cb = row?.querySelector('.chk');
-        if (cb && e.target !== cb) cb.checked = !cb.checked;
+    list.querySelectorAll('.rule-del-btn').forEach(el => {
+        el.addEventListener('click', async () => {
+            state.rules = state.rules.filter(r => r.id !== el.dataset.del);
+            if (tauriInvoke) await tauriInvoke('save_rules', { rules: state.rules });
+            renderRules();
+        });
     });
-    $('filter-bar').querySelectorAll('input, select').forEach(el => {
-        el.addEventListener('change', () => { if (currentFiles.length) applyFilters(); });
+}
+
+function renderTable() {
+    const filtered = getFilteredFiles();
+    const all = state.files.filter(f => !f.is_dir);
+    const selectedCount = state.selectedPaths.size;
+    const totalCount = all.length;
+
+    $('stat-selected').textContent = selectedCount;
+    $('stat-filtered').textContent = state.previewMode ? filtered.length : totalCount;
+    $('stat-total').textContent = totalCount;
+    $('btn-delete').disabled = selectedCount === 0;
+    const badge = $('delete-badge');
+    if (selectedCount > 0) { badge.textContent = selectedCount; badge.style.display = ''; }
+    else { badge.style.display = 'none'; }
+
+    const tbody = $('file-tbody');
+    tbody.innerHTML = filtered.map(f => {
+        const sel = state.selectedPaths.has(f.path);
+        const ext = (f.extension || '').toUpperCase() || '-';
+        const isDir = f.is_dir;
+        const color = fileColor(f);
+        const canPreview = PREVIEWABLE.has((f.extension||'').toLowerCase());
+        return `<tr class="${sel?'selected':''}" data-path="${escapeHtml(f.path)}">
+            <td class="col-check" style="border-left-color:${color}"><input type="checkbox" class="row-cb" data-path="${escapeHtml(f.path)}" ${sel?'checked':''} /></td>
+            <td class="col-path"><span class="path-text" title="${escapeHtml(relPath(f.path))}">${escapeHtml(relPath(f.path))}</span></td>
+            <td class="col-size">${fmtSize(f.size)}</td>
+            <td class="col-type"><span class="type-tag" style="background:${color};color:#fff">${isDir?'文件夹':ext}</span></td>
+            <td class="col-date" title="${escapeHtml(f.modified||'')}">${escapeHtml(f.modified||'')}</td>
+            <td class="col-action">
+                ${canPreview ? `<button class="row-btn row-preview" data-path="${escapeHtml(f.path)}" data-ext="${escapeHtml(f.extension||'')}" title="预览"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>` : ''}
+                <button class="row-btn row-reveal" data-path="${escapeHtml(f.path)}" title="打开位置"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg></button>
+            </td>
+        </tr>`;
+    }).join('');
+
+    // Bind row events
+    tbody.querySelectorAll('tr').forEach(tr => {
+        tr.addEventListener('click', (e) => {
+            if (e.target.closest('input') || e.target.closest('.row-btn')) return;
+            toggleSelect(tr.dataset.path);
+        });
+    });
+    tbody.querySelectorAll('.row-cb').forEach(cb => {
+        cb.addEventListener('change', () => toggleSelect(cb.dataset.path));
+    });
+    tbody.querySelectorAll('.row-preview').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openPreview(btn.dataset.path, btn.dataset.ext);
+        });
+    });
+    tbody.querySelectorAll('.row-reveal').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (tauriInvoke) tauriInvoke('show_in_folder', { path: btn.dataset.path });
+        });
     });
 
-    updateStatus();
-    $('file-table').style.display = 'none';
+    // Sort header arrows
+    document.querySelectorAll('.file-table th.sortable').forEach(th => {
+        const key = th.dataset.sort;
+        const arr = th.querySelector('.arr');
+        if (arr) arr.textContent = state.sortKey === key ? (state.sortAsc ? '↑' : '↓') : '';
+    });
+}
+
+function toggleSelect(path) {
+    if (state.selectedPaths.has(path)) state.selectedPaths.delete(path);
+    else state.selectedPaths.add(path);
+    renderTable();
+}
+
+function updateView() {
+    const hasFiles = state.files.length > 0;
+    $('empty-state').style.display = hasFiles ? 'none' : '';
+    $('table-area').style.display = hasFiles ? '' : 'none';
+    $('status-path').textContent = state.currentPath || '未选择文件夹';
+    $('btn-clear').style.display = state.currentPath ? '' : 'none';
+    renderTable();
+}
+
+// ── Preview ──
+function openPreview(path, ext) {
+    const isImg = IMG_EXTS.has((ext||'').toLowerCase());
+    const overlay = $('preview-overlay');
+    const img = $('preview-img');
+    const video = $('preview-video');
+    img.style.display = 'none';
+    video.style.display = 'none';
+    try {
+        const url = path.replace(/\\/g, '/');
+        if (isImg) { img.src = 'asset://localhost/' + encodeURIComponent(url); img.style.display = ''; }
+        else { video.src = 'asset://localhost/' + encodeURIComponent(url); video.style.display = ''; }
+    } catch {}
+    overlay.style.display = '';
+}
+
+// ── Actions ──
+async function scanFolder(path) {
+    state.loading = true;
+    $('loading-overlay').style.display = '';
+    try {
+        const result = await tauriInvoke('scan_files', { options: { path, recursive: true } });
+        state.files = result || [];
+        state.currentPath = path;
+        state.selectedPaths.clear();
+        state.previewMode = false;
+    } catch (e) { console.error('Scan failed:', e); state.files = []; }
+    state.loading = false;
+    $('loading-overlay').style.display = 'none';
+    updateView();
+    renderFilters();
+}
+
+async function handleDelete() {
+    const count = state.selectedPaths.size;
+    if (count === 0) return;
+    const ok = await showDialog({
+        title: '删除确认',
+        message: `确认删除选中的 ${count} 个文件？\n文件将移至回收站，可手动恢复。`,
+        kind: 'danger', confirmText: '确认删除', cancelText: '取消',
+    });
+    if (!ok) return;
+    try {
+        const paths = Array.from(state.selectedPaths);
+        const result = await tauriInvoke('delete_files', { paths });
+        const deletedSet = new Set(result.deleted);
+        state.files = state.files.filter(f => !deletedSet.has(f.path));
+        state.selectedPaths.clear();
+    } catch (e) { console.error('Delete failed:', e); }
+    updateView();
+}
+
+async function handlePreviewAction() {
+    // Dissolve mode
+    if (state.dissolveMode) {
+        state.loading = true; $('loading-overlay').style.display = '';
+        try {
+            const preview = await tauriInvoke('dissolve_folder', { path: state.currentPath, keepLevels: state.keepLevels, dryRun: true });
+            state.loading = false; $('loading-overlay').style.display = 'none';
+            if (!preview || preview.length === 0) { await showDialog({ title:'解散文件夹', message:'没有需要解散的文件。', showCancel:false }); return; }
+            const moves = preview.filter(r => r.action === 'move');
+            const skips = preview.filter(r => r.action === 'skip');
+            const items = [...moves.map(r=>`${r.name}  →  ${r.target}`), ...skips.map(r=>`${r.name}  ⤏ 跳过（重复文件）`)];
+            const ok = await showDialog({ title:`解散文件夹 · ${moves.length} 个移动`+(skips.length?` · ${skips.length} 个跳过`:''), message:'以下文件将被移动：', list:items, kind:'warning', confirmText:'执行解散' });
+            if (ok) {
+                state.loading = true; $('loading-overlay').style.display = '';
+                const results = await tauriInvoke('dissolve_folder', { path: state.currentPath, keepLevels: state.keepLevels, dryRun: false });
+                state.loading = false; $('loading-overlay').style.display = 'none';
+                await scanFolder(state.currentPath);
+                await showDialog({ title:'解散完成', message:`成功移动 ${results.filter(r=>r.action==='move').length} 个文件`, showCancel:false });
+            }
+        } catch(e) { state.loading=false; $('loading-overlay').style.display='none'; console.error(e); }
+        return;
+    }
+    // Delete empty dirs
+    if (state.deleteEmpty) {
+        state.loading = true; $('loading-overlay').style.display = '';
+        try {
+            const result = await tauriInvoke('delete_empty_dirs', { root: state.currentPath, dryRun: false });
+            state.loading = false; $('loading-overlay').style.display = 'none';
+            const total = result.deleted.length + result.failed.length;
+            if (total === 0) await showDialog({ title:'删除空文件夹', message:'没有找到空文件夹', showCancel:false });
+            else await showDialog({ title:'删除空文件夹', message:`已删除 ${result.deleted.length} 个空文件夹`+(result.failed.length?`\n${result.failed.length} 个删除失败`:''), showCancel:false });
+            await scanFolder(state.currentPath);
+        } catch(e) { state.loading=false; $('loading-overlay').style.display='none'; console.error(e); }
+        return;
+    }
+    // Rotate
+    if (state.rotateMode) {
+        if (state.selectedPaths.size === 0) { await showDialog({ title:'旋转图片', message:'请先在列表中选中要旋转的图片', showCancel:false }); return; }
+        await showDialog({ title:'旋转图片', message:`将 ${state.rotateDir==='cw'?'顺时针':'逆时针'} ${state.rotateAngle}° 旋转选中的图片`, kind:'warning', confirmText:'确认旋转' });
+        // Rotation logic would call rotate_file for each selected jpeg/mp4/mov
+        return;
+    }
+    // Dedupe
+    if (state.dedupeMode) {
+        state.loading = true; $('loading-overlay').style.display = '';
+        try {
+            const groups = await tauriInvoke('find_duplicates', { root: state.currentPath });
+            state.loading = false; $('loading-overlay').style.display = 'none';
+            if (!groups || groups.length === 0) { await showDialog({ title:'查找重复文件', message:'没有发现重复文件', showCancel:false }); return; }
+            const totalFiles = groups.reduce((s,g) => s + g.files.length, 0);
+            const items = groups.map(g => `[${fmtSize(g.size)}] ${g.files.map(f=>relPath(f.path)).join('  =  ')}`);
+            const ok = await showDialog({ title:`重复文件 · ${groups.length} 组 · ${totalFiles} 个文件`, message:'每组选择保留最新或最旧的文件：', list:items, kind:'warning', confirmText:'保留最新的', cancelText:'保留最旧的' });
+            // Delete duplicates based on choice
+            const keepNewest = ok;
+            const toDelete = [];
+            for (const g of groups) {
+                const sorted = [...g.files].sort((a,b) => {
+                    const d = (a.modified||'').localeCompare(b.modified||'');
+                    return keepNewest ? -d : (d !== 0 ? d : a.path.length - b.path.length);
+                });
+                toDelete.push(...sorted.slice(1).map(f=>f.path));
+            }
+            if (toDelete.length) {
+                await tauriInvoke('delete_duplicates', { action: { deletePaths: toDelete } });
+                await scanFolder(state.currentPath);
+                await showDialog({ title:'去重完成', message:`删除了 ${toDelete.length} 个重复文件，保留了 ${groups.length} 个文件`, showCancel:false });
+            }
+        } catch(e) { state.loading=false; $('loading-overlay').style.display='none'; console.error(e); }
+        return;
+    }
+    // Normal filter toggle
+    state.previewMode = !state.previewMode;
+    renderTable();
+}
+
+// ── Bind UI Events ──
+function bindEvents() {
+    // Open folder
+    $('btn-open').addEventListener('click', async () => {
+        if (tauriOpen) {
+            const selected = await tauriOpen({ directory: true, multiple: false });
+            if (selected) scanFolder(selected);
+        }
+    });
+    $('import-zone').addEventListener('click', () => $('btn-open').click());
+
+    // Delete
+    $('btn-delete').addEventListener('click', handleDelete);
+
+    // Preview / tool action
+    $('btn-preview').addEventListener('click', handlePreviewAction);
+
+    // Select all
+    $('select-all').addEventListener('change', (e) => {
+        const filtered = getFilteredFiles();
+        if (state.selectedPaths.size === filtered.length) state.selectedPaths.clear();
+        else state.selectedPaths = new Set(filtered.map(f => f.path));
+        renderTable();
+    });
+
+    // Sort headers
+    document.querySelectorAll('.file-table th.sortable').forEach(th => {
+        th.addEventListener('click', () => {
+            const key = th.dataset.sort;
+            if (state.sortKey === key) state.sortAsc = !state.sortAsc;
+            else { state.sortKey = key; state.sortAsc = true; }
+            renderTable();
+        });
+    });
+
+    // Clear list
+    $('btn-clear').addEventListener('click', () => {
+        state.files = []; state.currentPath = ''; state.selectedPaths.clear(); state.previewMode = false;
+        updateView(); renderFilters();
+    });
+
+    // Filter add panel
+    $('btn-add-filter').addEventListener('click', () => {
+        const panel = $('add-panel');
+        panel.style.display = panel.style.display === 'none' ? '' : 'none';
+    });
+    document.querySelectorAll('#add-panel .type-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const type = btn.dataset.type;
+            const base = { filter_type: type, enabled: true, negate: false };
+            if (type === 'name') state.filters.push({ ...base, operator:'contains', value:'' });
+            else if (type === 'extension') state.filters.push({ ...base, value:'' });
+            else if (type === 'size') state.filters.push({ ...base, operator:'>', value:'', unit:'MB' });
+            else if (type === 'date') state.filters.push({ ...base, operator:'recent', value:'', unit:'day' });
+            $('add-panel').style.display = 'none';
+            renderFilters(); renderTable();
+        });
+    });
+
+    // Filter edit mode
+    $('btn-filter-edit').addEventListener('click', () => {
+        state.filterEdit = !state.filterEdit;
+        $('btn-filter-edit').classList.toggle('active', state.filterEdit);
+        renderFilters();
+    });
+
+    // Clear all filters
+    $('btn-clear-filters').addEventListener('click', () => {
+        state.filters = []; state.previewMode = false;
+        renderFilters(); renderTable();
+    });
+
+    // Reset filters
+    $('btn-reset-filters').addEventListener('click', () => {
+        state.filters = [
+            { filter_type:'name', enabled:false, operator:'contains', value:'', negate:false },
+            { filter_type:'extension', enabled:false, value:'', negate:false },
+            { filter_type:'size', enabled:false, operator:'>', value:'', unit:'MB', negate:false },
+            { filter_type:'date', enabled:false, operator:'recent', value:'', unit:'day', negate:false },
+        ];
+        state.previewMode = false;
+        renderFilters(); renderTable();
+    });
+
+    // Rule save
+    $('btn-save-rule').addEventListener('click', async () => {
+        const name = $('rule-name-input').value.trim();
+        if (!name || state.filters.length === 0) return;
+        const rule = { id: Date.now().toString(), name, filters: JSON.parse(JSON.stringify(state.filters)), created_at: new Date().toISOString() };
+        state.rules.push(rule);
+        if (tauriInvoke) await tauriInvoke('save_rules', { rules: state.rules });
+        $('rule-name-input').value = '';
+        renderRules();
+    });
+
+    // Rule edit mode
+    $('btn-rule-edit').addEventListener('click', () => {
+        state.ruleEdit = !state.ruleEdit;
+        $('btn-rule-edit').classList.toggle('active', state.ruleEdit);
+        renderRules();
+    });
+
+    // Tool toggles (mutual exclusion)
+    const toolIds = ['tool-delete-empty','tool-dissolve','tool-dedupe','tool-rotate'];
+    toolIds.forEach(id => {
+        $(id).addEventListener('change', () => {
+            state.deleteEmpty = $('tool-delete-empty').checked;
+            state.dissolveMode = $('tool-dissolve').checked;
+            state.dedupeMode = $('tool-dedupe').checked;
+            state.rotateMode = $('tool-rotate').checked;
+            renderFilters();
+        });
+    });
+    $('tool-dissolve-levels').addEventListener('input', () => { state.keepLevels = parseInt($('tool-dissolve-levels').value) || 1; });
+    $('tool-rotate-dir').addEventListener('change', () => { state.rotateDir = $('tool-rotate-dir').value; });
+    $('tool-rotate-angle').addEventListener('change', () => { state.rotateAngle = parseInt($('tool-rotate-angle').value); });
+
+    // Dialog buttons
+    $('dlg-confirm').addEventListener('click', () => closeDlg(true));
+    $('dlg-cancel').addEventListener('click', () => closeDlg(false));
+    $('dlg-close-x').addEventListener('click', () => closeDlg(false));
+    $('dlg-overlay').addEventListener('click', (e) => { if (e.target === $('dlg-overlay')) closeDlg(false); });
+
+    // Preview overlay
+    $('preview-overlay').addEventListener('click', (e) => {
+        if (e.target === $('preview-overlay')) { $('preview-overlay').style.display = 'none'; }
+    });
+    $('btn-close-preview').addEventListener('click', () => { $('preview-overlay').style.display = 'none'; });
+
+    // Drag & drop
+    const zone = $('import-zone');
+    zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('over'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('over'));
+    zone.addEventListener('drop', (e) => {
+        e.preventDefault(); zone.classList.remove('over');
+        // In browser mode this won't have Tauri paths, but in Tauri it works via the webview
+    });
+}
+
+// ── Init ──
+async function init() {
+    await initTauri();
+    bindEvents();
+    renderFilters();
     renderRules();
-});
+    renderTable();
+
+    // Load rules from Tauri
+    if (tauriInvoke) {
+        try { state.rules = await tauriInvoke('load_rules'); renderRules(); } catch {}
+    }
+
+    // Tauri drag & drop
+    try {
+        const wv = await import('https://unpkg.com/@tauri-apps/api/webviewWindow');
+        const win = wv.getCurrentWebviewWindow();
+        win.onDragDropEvent((event) => {
+            const type = event.payload.type;
+            if (type === 'over') { $('import-zone').classList.add('over'); }
+            else if (type === 'leave' || type === 'drop') { $('import-zone').classList.remove('over'); }
+            if (type === 'drop' && event.payload.paths?.length > 0 && !state.loading) {
+                scanFolder(event.payload.paths[0]);
+            }
+        });
+    } catch {}
+}
+
+init();

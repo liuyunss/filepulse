@@ -8,105 +8,174 @@
 </head>
 <body>
     <div id="app">
-        <!-- 顶栏 -->
-        <div id="topbar">
-            <button id="btn-open">📂 选择文件夹</button>
-            <span id="folder-path">未选择</span>
-            <span id="file-count">0 个文件</span>
-            <div class="spacer"></div>
-            <button id="btn-preview">预览</button>
-            <button id="btn-delete" class="btn-danger">删除选中</button>
-            <button id="btn-advanced">更多工具</button>
-        </div>
-
-        <!-- 筛选栏（始终显示） -->
-        <div id="filter-bar">
-            <label class="filter-item">
-                <input type="checkbox" id="size-filter"> 大小
-                <select id="size-op"><option value="gt">&gt;</option><option value="lt">&lt;</option></select>
-                <input type="number" id="size-value" value="10">
-                <select id="size-unit"><option value="MB">MB</option><option value="KB">KB</option><option value="GB">GB</option></select>
-            </label>
-            <label class="filter-item">
-                <input type="checkbox" id="ext-filter"> 后缀
-                <input type="text" id="ext-value" placeholder=".mp4,.avi">
-            </label>
-            <label class="filter-item">
-                <input type="checkbox" id="date-filter">
-                <input type="number" id="date-value" value="7"> 天内
-            </label>
-            <span id="filter-stats"></span>
-        </div>
-
-        <!-- 表格 -->
-        <div id="table-wrap">
-            <table id="file-table">
-                <thead><tr>
-                    <th class="col-chk"><input type="checkbox" id="select-all"></th>
-                    <th class="col-name sortable" data-sort="name">文件名 <span class="arr"></span></th>
-                    <th class="col-size sortable" data-sort="size">大小 <span class="arr"></span></th>
-                    <th class="col-type sortable" data-sort="extension">类型 <span class="arr"></span></th>
-                    <th class="col-date sortable" data-sort="modified">修改时间 <span class="arr"></span></th>
-                    <th class="col-path">路径</th>
-                </tr></thead>
-                <tbody id="file-tbody"></tbody>
-            </table>
-            <div id="empty-state">点击「📂 选择文件夹」开始</div>
-        </div>
-
-        <!-- 底部状态 -->
-        <div id="statusbar">
-            <span id="status-text">就绪</span>
-        </div>
-
-        <!-- 更多工具面板 -->
-        <div id="tools-panel" style="display:none">
-            <div class="tools-tabs">
-                <span class="tab active" data-tab="cleanup">空文件清理</span>
-                <span class="tab" data-tab="dissolve">解散文件夹</span>
-                <span class="tab" data-tab="rules">规则</span>
-                <span class="tab-close" id="btn-close-tools">✕</span>
-            </div>
-            <div class="tab-content" id="tab-cleanup">
-                <input type="text" id="empty-ext-value" value=".txt,.log,.tmp" placeholder="后缀,逗号分隔">
-                <button id="btn-scan-empty">扫描</button>
-                <button id="btn-delete-empty" class="btn-danger" disabled>删除</button>
-                <div id="empty-cleanup-preview" style="display:none"><div id="empty-cleanup-count"></div><div id="empty-cleanup-list"></div></div>
-            </div>
-            <div class="tab-content" id="tab-dissolve" style="display:none">
-                保留 <select id="keep-levels"><option value="0">0</option><option value="1" selected>1</option><option value="2">2</option><option value="3">3</option></select> 级
-                <button id="btn-preview-dissolve">预览</button>
-                <div id="dissolve-preview" style="display:none"></div>
-            </div>
-            <div class="tab-content" id="tab-rules" style="display:none">
-                <button id="btn-save-rule">保存当前</button>
-                <button id="btn-delete-rule" class="btn-danger">删除规则</button>
-                <div id="rules-list"></div>
-            </div>
-        </div>
-
-        <!-- 预览弹窗 -->
-        <div id="preview-overlay" style="display:none">
-            <div id="preview-dialog">
-                <div class="preview-header">
-                    <span>预览结果 — <span id="preview-count">0</span> 个文件</span>
-                    <button id="btn-close-preview" class="btn-close">✕</button>
+        <div class="app-layout">
+            <!-- ═══ 左侧边栏 ═══ -->
+            <aside class="sidebar">
+                <!-- 筛选条件 -->
+                <div class="side-section" id="filter-section">
+                    <div class="side-title">
+                        筛选条件
+                        <button class="icon-btn add-icon" id="btn-add-filter" title="新增条件">＋</button>
+                        <button class="icon-btn" id="btn-filter-edit" title="编辑模式">
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h12"/></svg>
+                        </button>
+                        <button class="icon-btn" id="btn-clear-filters" title="清空所有条件">
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 01-2 2H9a2 2 0 01-2-2L5 6"/></svg>
+                        </button>
+                        <button class="icon-btn" id="btn-reset-filters" title="重置为默认条件">
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+                        </button>
+                    </div>
+                    <div id="add-panel" class="add-panel" style="display:none">
+                        <button class="type-btn" style="background:#1890ff" data-type="name">名称</button>
+                        <button class="type-btn" style="background:#52c41a" data-type="extension">后缀</button>
+                        <button class="type-btn" style="background:#fa8c16" data-type="size">大小</button>
+                        <button class="type-btn" style="background:#8b5cf6" data-type="date">日期</button>
+                    </div>
+                    <div id="filter-list" class="filter-box"></div>
+                    <div id="filter-empty" class="empty-hint">点击 ＋ 添加筛选规则</div>
                 </div>
-                <div id="preview-body">
-                    <table id="preview-table">
-                        <thead><tr>
-                            <th class="pv-chk"><input type="checkbox" id="pv-select-all" checked></th>
-                            <th class="pv-name sortable" data-sort="name">文件名</th>
-                            <th class="pv-size sortable" data-sort="size">大小</th>
-                            <th class="pv-type">类型</th>
-                            <th class="pv-path">路径</th>
-                        </tr></thead>
-                        <tbody id="preview-tbody"></tbody>
+
+                <!-- 规则管理 -->
+                <div class="side-section" id="rule-section">
+                    <div class="side-title" style="margin-bottom:0">
+                        规则管理
+                        <input id="rule-name-input" class="inp rule-inp" placeholder="命名并保存..." />
+                        <button class="icon-btn save-icon" id="btn-save-rule" title="保存当前筛选">
+                            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                        </button>
+                        <button class="icon-btn" id="btn-rule-edit" title="编辑模式">
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h12"/></svg>
+                        </button>
+                    </div>
+                    <div id="rule-list" class="rule-list"></div>
+                    <div id="rule-empty" class="empty-hint">暂无保存的规则</div>
+                </div>
+
+                <!-- 工具集合 -->
+                <div class="side-section side-tools">
+                    <div class="side-title">工具集合 <span class="tip-icon" data-tip="工具模式与筛选模式互斥，启用工具时将禁用筛选条件">!</span></div>
+                    <div class="tool-box">
+                        <label class="tool-row" style="border-left-color:#ff4d4f">
+                            <input type="checkbox" id="tool-delete-empty" /><span>删除空文件夹</span>
+                        </label>
+                        <label class="tool-row" style="border-left-color:#fa8c16">
+                            <input type="checkbox" id="tool-dissolve" /><span>解散文件夹</span>
+                            <span class="tool-txt">保留</span>
+                            <input id="tool-dissolve-levels" class="inp-xs" type="number" min="0" value="1" style="flex:none;width:44px;" />
+                            <span class="tool-txt">级目录</span>
+                            <span class="tip-icon" data-tip="0 级 → a/b/c.txt 变为 /c.txt&#10;1 级 → a/b/c.txt 变为 a/c.txt&#10;2 级 → a/b/c.txt 变为 a/b/c.txt">?</span>
+                        </label>
+                        <label class="tool-row" style="border-left-color:#722ed1">
+                            <input type="checkbox" id="tool-dedupe" /><span>删除重复文件</span>
+                            <span class="tip-icon" data-tip="检测文件夹内完全相同的文件&#10;支持保留最新或最旧的文件">?</span>
+                        </label>
+                        <label class="tool-row" style="border-left-color:#0ea5e9">
+                            <input type="checkbox" id="tool-rotate" /><span>旋转</span>
+                            <select id="tool-rotate-dir" class="sel"><option value="cw">顺时针</option><option value="ccw">逆时针</option></select>
+                            <select id="tool-rotate-angle" class="sel"><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select>
+                            <span class="tip-icon" data-tip="顺时针90°→图片右转&#10;修改JPEG的EXIF元信息实现">?</span>
+                        </label>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- ═══ 右侧主区域 ═══ -->
+            <main class="app-main">
+                <!-- 顶部工具栏 -->
+                <div class="toolbar">
+                    <img src="../src-tauri/icons/icon.png" class="app-logo" alt="FilePulse" />
+                    <div class="tb-group">
+                        <button class="tb-btn" id="btn-open" title="导入文件夹">
+                            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/><line x1="12" y1="11" x2="12" y2="17"/><polyline points="9 14 12 17 15 14"/>
+                            </svg>
+                        </button>
+                        <button class="tb-btn" id="btn-preview" title="筛选匹配">
+                            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                            </svg>
+                        </button>
+                        <button class="tb-btn tb-btn--danger" id="btn-delete" disabled title="删除文件">
+                            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 01-2 2H9a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
+                            </svg>
+                            <em id="delete-badge" style="display:none"></em>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 空状态 -->
+                <div id="empty-state" class="table-scroll table-empty">
+                    <div class="import-zone" id="import-zone">
+                        <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
+                            <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/><line x1="12" y1="11" x2="12" y2="17"/><polyline points="9 14 12 17 15 14"/>
+                        </svg>
+                        <p>选择文件夹或拖拽到此处导入</p>
+                    </div>
+                </div>
+
+                <!-- 文件表格 -->
+                <div id="table-area" class="table-scroll" style="display:none">
+                    <table class="file-table">
+                        <thead>
+                            <tr>
+                                <th class="col-check"><input type="checkbox" id="select-all" /></th>
+                                <th class="col-path sortable" data-sort="name">路径 <span class="arr"></span></th>
+                                <th class="col-size sortable" data-sort="size">大小 <span class="arr"></span></th>
+                                <th class="col-type sortable" data-sort="extension">类型 <span class="arr"></span></th>
+                                <th class="col-date sortable" data-sort="modified">修改时间 <span class="arr"></span></th>
+                                <th class="col-action">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="file-tbody"></tbody>
                     </table>
                 </div>
-                <div class="preview-footer">
-                    <button id="btn-cancel-preview">取消</button>
-                    <button id="btn-confirm-preview" class="btn-danger">确认删除</button>
+
+                <!-- 加载中 -->
+                <div id="loading-overlay" class="loading-overlay" style="display:none">
+                    <div class="loading-spinner"></div><span>扫描中...</span>
+                </div>
+
+                <!-- 底部状态栏 -->
+                <div class="statusbar">
+                    <div class="status-left">
+                        <span class="status-path" id="status-path">未选择文件夹</span>
+                        <button class="clear-btn" id="btn-clear" style="display:none" title="清空列表">✕</button>
+                    </div>
+                    <div class="status-stats">
+                        <span class="stat">选中 <strong id="stat-selected">0</strong></span>
+                        <span class="stat">筛选 <strong id="stat-filtered">0</strong></span>
+                        <span class="stat">总数 <strong id="stat-total">0</strong></span>
+                    </div>
+                </div>
+            </main>
+        </div>
+
+        <!-- ═══ 预览模态框 ═══ -->
+        <div id="preview-overlay" class="preview-overlay" style="display:none">
+            <div class="preview-box">
+                <button class="preview-close" id="btn-close-preview">✕</button>
+                <img id="preview-img" class="preview-img" style="display:none" />
+                <video id="preview-video" class="preview-video" controls style="display:none"></video>
+            </div>
+        </div>
+
+        <!-- ═══ 自定义弹框 ═══ -->
+        <div id="dlg-overlay" class="dlg-overlay" style="display:none">
+            <div class="dlg-box">
+                <div class="dlg-header">
+                    <span class="dlg-title" id="dlg-title"></span>
+                    <button class="dlg-close" id="dlg-close-x">✕</button>
+                </div>
+                <div class="dlg-body">
+                    <p id="dlg-message" class="dlg-msg"></p>
+                    <div id="dlg-thumbs" class="dlg-thumbs"></div>
+                    <ul id="dlg-list" class="dlg-list"></ul>
+                </div>
+                <div class="dlg-footer">
+                    <button class="dlg-btn dlg-btn--cancel" id="dlg-cancel">取消</button>
+                    <button class="dlg-btn dlg-btn--confirm" id="dlg-confirm">确认</button>
                 </div>
             </div>
         </div>
