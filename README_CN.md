@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/icon.png" width="100" alt="FilePulse Icon">
+  <img src="src-tauri/icons/icon.png" width="100" alt="FilePulse Icon">
 </p>
 
 <h1 align="center">FilePulse（文件脉搏）</h1>
@@ -12,7 +12,7 @@
 <p align="center">
   <a href="https://github.com/liuyunss/filepulse/releases/latest"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/liuyunss/filepulse?style=flat-square"></a>
   <a href="https://github.com/liuyunss/filepulse/blob/dev/LICENSE"><img alt="License" src="https://img.shields.io/github/license/liuyunss/filepulse?style=flat-square"></a>
-  <a href="https://github.com/liuyunss/filepulse/actions"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/liuyunss/filepulse/build.yml?branch=dev&style=flat-square&label=build"></a>
+  <a href="https://github.com/liuyunss/filepulse/actions"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/liuyunss/filepulse/build.yml?style=flat-square&label=build"></a>
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square">
 </p>
 
@@ -40,13 +40,7 @@
 
 ### 下载安装
 
-前往 [**Releases 页面**](https://github.com/liuyunss/filepulse/releases/latest) 下载对应平台的压缩包：
-
-| 平台 | 文件 | 说明 |
-|------|------|------|
-| 🪟 Windows | `FilePulse_*_windows_x64.zip` | 解压后运行 `FilePulse.exe` |
-| 🍎 macOS | `FilePulse_*_macos.zip` | 解压后运行 `FilePulse.app` |
-| 🐧 Linux | `FilePulse_*_linux_x64.tar.gz` | 解压后运行 `FilePulse` |
+前往 [**Releases 页面**](https://github.com/liuyunss/filepulse/releases/latest) 下载对应平台的最新版本。
 
 ### 从源码构建
 
